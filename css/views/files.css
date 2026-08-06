@@ -1,0 +1,235 @@
+/* ============================================================
+   Drive Upb — views/files.css
+   Estilos específicos de la vista "Archivos" (#/archivos):
+   encabezado, migas de pan, acceso rápido, listas/cuadrículas,
+   vista previa.
+   ============================================================ */
+
+.main-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0 16px;
+  flex-wrap: wrap;
+}
+.main-title-wrap { display: flex; align-items: center; gap: 4px; }
+.main-title { font-size: 22px; color: var(--text); }
+.breadcrumb-back .material-icons { font-size: 22px; }
+
+/* Migas de pan (ruta de carpetas) */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+  color: var(--text-3);
+  font-size: 13px;
+}
+.breadcrumb .crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  color: var(--text-3);
+  transition: background .12s, color .12s;
+}
+.breadcrumb .crumb:hover { background: var(--surface-3); color: var(--text); }
+.breadcrumb .crumb.current { color: var(--text); font-weight: 500; cursor: default; }
+.breadcrumb .crumb.current:hover { background: transparent; }
+.breadcrumb .crumb-sep { color: var(--text-disabled); font-size: 16px; }
+
+.main-controls { display: flex; align-items: center; gap: 16px; }
+
+/* Chips de filtro rápido */
+.quick-filters { display: flex; gap: 8px; }
+.filter-chip {
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  color: var(--text-3);
+  font-size: 13px;
+  transition: background .12s, color .12s;
+}
+.filter-chip:hover { background: var(--surface-3); }
+.filter-chip.active { background: var(--primary-soft); color: var(--primary); font-weight: 500; }
+
+/* Toggle de vista */
+.view-toggle { display: flex; align-items: center; gap: 4px; }
+
+/* ---------- Acceso rápido (carrusel) ---------- */
+.quick-access { padding: 8px 0 16px; }
+.qa-title, .block-title {
+  font-size: 16px;
+  color: var(--text);
+  margin-bottom: 12px;
+  letter-spacing: .1px;
+}
+.qa-grid {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scroll-behavior: smooth;
+}
+
+/* Tarjetas de acceso rápido */
+.qa-card {
+  flex: 0 0 auto;
+  width: 180px;
+  height: 76px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--on-primary);
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition: box-shadow .15s, transform .08s;
+  overflow: hidden;
+}
+.qa-card:hover { box-shadow: var(--shadow-3); }
+.qa-card:active { transform: scale(.98); }
+.qa-card .material-icons { background: rgba(255,255,255,.2); border-radius: var(--radius-full); padding: 6px; font-size: 22px; }
+.qa-name { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Colores de tarjetas rápidas */
+.qa-card.c1 { background: linear-gradient(135deg, #4a90e2, #357abd); }
+.qa-card.c2 { background: linear-gradient(135deg, #7e57c2, #5e35c1); }
+.qa-card.c3 { background: linear-gradient(135deg, #ec407a, #c2185b); }
+.qa-card.c4 { background: linear-gradient(135deg, #26a69a, #00796b); }
+.qa-card.c5 { background: linear-gradient(135deg, #ec8e3e, #d97706); }
+.qa-card.c6 { background: linear-gradient(135deg, #6a8caf, #4a6885); }
+
+/* ---------- Bloques (Carpetas / Archivos) ---------- */
+.block { padding: 8px 0 20px; }
+
+/* Contenedor de items (lista o cuadrícula) */
+.items-container {
+  display: grid;
+  gap: 4px;
+}
+
+/* Vista de lista */
+.list-view {
+  grid-template-columns: 1fr;
+}
+.item-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 160px 140px 40px;
+  align-items: center;
+  gap: 12px;
+  height: 48px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background .12s;
+  border-bottom: 1px solid var(--border);
+}
+.item-row:hover { background: var(--surface-2); }
+.item-row.selected { background: var(--primary-soft); }
+.item-thumb .material-icons,
+.item-row .item-thumb .material-icons { font-size: 22px; }
+.item-thumb { display: flex; align-items: center; justify-content: center; }
+.item-thumb .material-icons.folder { color: var(--primary); }
+.item-thumb .material-icons.image  { color: #ec407a; }
+.item-thumb .material-icons.video  { color: #7e57c2; }
+.item-thumb .material-icons.doc    { color: #4a90e2; }
+.item-thumb .material-icons.sheet  { color: #2e7d32; }
+.item-thumb .material-icons.slides { color: #ef6c00; }
+.item-name { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.star-badge { color: var(--star); font-size: 18px; }
+.item-meta, .item-date { color: var(--text-3); font-size: 13px; }
+
+/* Encabezado de columna para lista */
+.list-header {
+  display: grid;
+  grid-template-columns: 44px 1fr 160px 140px 40px;
+  gap: 12px;
+  padding: 8px 12px;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+/* Vista de cuadrícula */
+.grid-view {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.grid-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow .15s, border-color .15s;
+  background: var(--surface);
+}
+.grid-card:hover { box-shadow: var(--shadow-2); border-color: var(--border-strong); }
+.grid-card.selected { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.grid-thumb {
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  font-size: 48px;
+}
+.grid-thumb .material-icons.folder { color: var(--primary); }
+.grid-thumb .material-icons.image  { color: #ec407a; }
+.grid-thumb .material-icons.video  { color: #7e57c2; }
+.grid-thumb .material-icons.doc    { color: #4a90e2; }
+.grid-thumb .material-icons.sheet  { color: #2e7d32; }
+.grid-thumb .material-icons.slides { color: #ef6c00; }
+.grid-meta { padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; }
+.grid-meta .item-name { font-size: 14px; }
+.grid-meta .item-date { font-size: 12px; }
+
+/* Estado vacío / placeholder de vistas futuras */
+.empty-state {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 48px 16px;
+  color: var(--text-3);
+}
+.empty-state .material-icons { font-size: 56px; color: var(--text-disabled); margin-bottom: 12px; }
+.empty-state p { font-size: 14px; }
+
+/* Vista previa */
+.preview-card { max-width: 720px; }
+.preview-body {
+  padding: 8px 20px 20px;
+  overflow-y: auto;
+  min-height: 200px;
+  color: var(--text-2);
+  font-size: 14px;
+}
+.preview-body img {
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  display: block;
+  margin: 0 auto;
+}
+.preview-body .preview-placeholder {
+  text-align: center;
+  color: var(--text-3);
+  padding: 40px 0;
+}
+.preview-body .preview-placeholder .material-icons { font-size: 64px; color: var(--text-disabled); }
+
+/* Responsive: colapsar columnas de la lista en móvil */
+@media (max-width: 720px) {
+  .item-row, .list-header { grid-template-columns: 40px 1fr 40px; }
+  .item-row .item-meta, .item-row .item-date, .list-header span:nth-child(3),
+  .list-header span:nth-child(4) { display: none; }
+}

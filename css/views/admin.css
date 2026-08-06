@@ -1,0 +1,29 @@
+/* ============================================================
+   Drive Upb — views/admin.css
+   Gestión de usuarios, mapa de servicios, bitácora de auditoría.
+   ============================================================ */
+
+.admin-add-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.admin-add-row .share-select { flex: 1 1 160px; }
+.field-narrow-sm { max-width: 110px; }
+.user-quota-input { width: 80px; }
+
+.admin-audit-filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.admin-audit-filters .share-field { flex: 0 0 160px; }
+
+.jobs-table code {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  font-size: 12px;
+}

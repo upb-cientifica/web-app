@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drive Upb</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'">
+  <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
+  <!-- Tipografía Roboto + Material Icons autohospedadas (sin CDN externo) -->
+  <link rel="stylesheet" href="assets/fonts/fonts.css">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/views/files.css">
+  <link rel="stylesheet" href="css/views/auth.css">
+  <link rel="stylesheet" href="css/components/sharing.css">
+  <link rel="stylesheet" href="css/views/jobs.css">
+  <link rel="stylesheet" href="css/views/monitoring.css">
+  <link rel="stylesheet" href="css/views/photos.css">
+  <link rel="stylesheet" href="css/views/videos.css">
+  <link rel="stylesheet" href="css/views/sync.css">
+  <link rel="stylesheet" href="css/views/admin.css">
+</head>
+<body>
+
+  <!-- ============ TOPBAR ============ -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="icon-btn" id="btn-menu" title="Menú principal" aria-label="Menú principal">
+        <span class="material-icons">menu</span>
+      </button>
+      <div class="logo">
+        <span class="material-icons logo-icon">cloud</span>
+        <span class="logo-text">Drive Upb</span>
+      </div>
+    </div>
+
+    <div class="topbar-search">
+      <span class="material-icons search-icon">search</span>
+      <input type="text" id="search-input" placeholder="Buscar en Drive">
+    </div>
+
+    <div class="topbar-right">
+      <button class="icon-btn" title="Soporte" aria-label="Soporte">
+        <span class="material-icons">help_outline</span>
+      </button>
+      <button class="icon-btn" title="Ajustes" aria-label="Ajustes">
+        <span class="material-icons">settings</span>
+      </button>
+      <button class="icon-btn" title="Aplicaciones" aria-label="Aplicaciones">
+        <span class="material-icons">apps</span>
+      </button>
+      <div class="avatar-wrap">
+        <button class="avatar" id="avatar-btn" title="Cuenta" aria-label="Cuenta" aria-haspopup="true">YS</button>
+        <div class="avatar-menu hidden" id="avatar-menu"></div>
+      </div>
+    </div>
+  </header>
+
+  <div class="app-body">
+
+    <!-- ============ SIDEBAR ============ -->
+    <aside class="sidebar">
+      <div class="new-button-wrap">
+        <button class="new-btn" id="btn-new">
+          <span class="material-icons new-icon">add</span>
+          <span>Nuevo</span>
+        </button>
+        <!-- Menú desplegable de "Nuevo" -->
+        <div class="new-menu hidden" id="new-menu">
+          <button class="new-menu-item" data-action="upload-folder">
+            <span class="material-icons">upload_file</span> Subir archivo
+          </button>
+          <button class="new-menu-item" data-action="upload-folder-carp">
+            <span class="material-icons">drive_folder_upload</span> Subir carpeta
+          </button>
+          <hr>
+          <button class="new-menu-item" data-action="create-folder">
+            <span class="material-icons">create_new_folder</span> Crear carpeta
+          </button>
+        </div>
+      </div>
+
+      <!-- Secciones tipo Drive: sub-estado de la vista Archivos -->
+      <nav class="nav">
+        <button class="nav-item active" data-section="my-drive">
+          <span class="material-icons">drive_file_move</span>
+          <span>Mi unidad</span>
+        </button>
+        <button class="nav-item" data-section="shared">
+          <span class="material-icons">group</span>
+          <span>Compartido conmigo</span>
+        </button>
+        <button class="nav-item" data-section="computer">
+          <span class="material-icons">devices</span>
+          <span>Computadora</span>
+        </button>
+        <button class="nav-item" data-section="starred">
+          <span class="material-icons">star</span>
+          <span>Destacados</span>
+        </button>
+        <button class="nav-item" data-section="trash">
+          <span class="material-icons">delete_outline</span>
+          <span>Papelera</span>
+        </button>
+      </nav>
+
+      <hr class="sidebar-sep">
+
+      <!-- Módulos de nivel superior: navegación por rutas -->
+      <nav class="nav">
+        <button class="nav-item" data-route="/fotos">
+          <span class="material-icons">photo_library</span>
+          <span>Fotos</span>
+        </button>
+        <button class="nav-item" data-route="/videos">
+          <span class="material-icons">movie</span>
+          <span>Videos</span>
+        </button>
+        <button class="nav-item" data-route="/sync">
+          <span class="material-icons">sync</span>
+          <span>Sincronización</span>
+        </button>
+        <button class="nav-item" data-route="/trabajos">
+          <span class="material-icons">terminal</span>
+          <span>Trabajos MPI</span>
+        </button>
+        <button class="nav-item" data-route="/monitoreo">
+          <span class="material-icons">monitoring</span>
+          <span>Monitoreo</span>
+        </button>
+        <button class="nav-item" data-route="/admin">
+          <span class="material-icons">admin_panel_settings</span>
+          <span>Administración</span>
+        </button>
+      </nav>
+
+      <hr class="sidebar-sep">
+
+      <div class="storage">
+        <span class="material-icons storage-icon">cloud</span>
+        <div class="storage-bar-wrap">
+          <div class="storage-bar"></div>
+        </div>
+        <p class="storage-text">Cargando almacenamiento…</p>
+      </div>
+    </aside>
+
+    <!-- ============ ÁREA PRINCIPAL: cada ruta monta su vista aquí ============ -->
+    <main class="main" id="view-root"></main>
+
+    <!-- ============ PANEL LATERAL DE DETALLES ============ -->
+    <aside class="details-panel hidden" id="details-panel"></aside>
+  </div>
+
+  <!-- ============ MODAL: SUBIR ARCHIVO ============ -->
+  <div class="modal hidden" id="modal-upload">
+    <div class="modal-card" aria-labelledby="upload-modal-title">
+      <div class="modal-head">
+        <h3 id="upload-modal-title">Cargar archivo</h3>
+        <button class="icon-btn" data-close-modal="modal-upload" aria-label="Cerrar">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <div class="dropzone" id="dropzone">
+        <span class="material-icons dropzone-icon">cloud_upload</span>
+        <p>Arrastra archivos aquí</p>
+        <span class="dropzone-sub">o</span>
+        <label class="dropzone-btn">
+          Seleccionar archivo del equipo
+          <input type="file" multiple hidden>
+        </label>
+        <p class="dropzone-note">Concepto demostrativo: la subida real no se realiza.</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-text" data-close-modal="modal-upload">Cancelar</button>
+        <button class="btn-primary" id="upload-confirm-btn">Cargar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MODAL: VISTA PREVIA ============ -->
+  <div class="modal hidden" id="modal-preview">
+    <div class="modal-card preview-card" aria-labelledby="preview-title">
+      <div class="modal-head">
+        <h3 id="preview-title">Vista previa</h3>
+        <button class="icon-btn" data-close-modal="modal-preview" aria-label="Cerrar">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <div class="preview-body" id="preview-body"></div>
+    </div>
+  </div>
+
+  <!-- ============ MODAL: COMPARTIR ============ -->
+  <div class="modal hidden" id="modal-share">
+    <div class="modal-card share-card" aria-labelledby="share-title">
+      <div class="modal-head">
+        <h3 id="share-title">Compartir</h3>
+        <button class="icon-btn" data-close-modal="modal-share" aria-label="Cerrar">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <div class="share-tabs">
+        <button class="share-tab active" data-tab="people">Personas</button>
+        <button class="share-tab" data-tab="link">Enlace externo</button>
+      </div>
+      <div class="share-tab-panel" id="share-panel-people"></div>
+      <div class="share-tab-panel hidden" id="share-panel-link"></div>
+      <div class="modal-foot">
+        <button class="btn-text" data-close-modal="modal-share">Listo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MENÚ CONTEXTUAL ============ -->
+  <div class="context-menu hidden" id="context-menu">
+    <button class="ctx-item" data-act="open"><span class="material-icons">open_in_new</span>Abrir</button>
+    <button class="ctx-item" data-act="download"><span class="material-icons">download</span>Descargar</button>
+    <button class="ctx-item" data-act="share"><span class="material-icons">person_add</span>Compartir</button>
+    <button class="ctx-item" data-act="details"><span class="material-icons">info</span>Detalles</button>
+    <button class="ctx-item" data-act="rename"><span class="material-icons">edit</span>Cambiar nombre</button>
+    <button class="ctx-item" data-act="star"><span class="material-icons">star_border</span>Destacar</button>
+    <button class="ctx-item" data-act="move"><span class="material-icons">drive_file_move</span>Mover a</button>
+    <hr>
+    <button class="ctx-item danger" data-act="delete"><span class="material-icons">delete</span>Eliminar</button>
+  </div>
+
+  <!-- ============ TOAST ============ -->
+  <div class="toast hidden" id="toast"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+/* ============================================================
+   Drive Upb — views/sync.css
+   Dispositivos, historial de versiones, conflictos, actividad.
+   ============================================================ */
+
+.field-narrow { max-width: 320px; }
+.device-platform-icon { font-size: 18px; vertical-align: -4px; color: var(--text-3); }
+
+.version-list { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.version-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+.version-item.version-current { border-color: var(--primary); background: var(--primary-soft); }
+.version-item-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.version-label { font-size: 13px; font-weight: 500; color: var(--text); }
+.version-diff { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--text-3); }
+.version-diff-changed { color: var(--primary); font-weight: 500; }
+
+.conflict-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.conflict-title { font-size: 14px; font-weight: 500; color: var(--text); margin-bottom: 10px; }
+.conflict-versions { display: flex; gap: 16px; flex-wrap: wrap; }
+.conflict-version { flex: 1 1 200px; background: var(--surface-2); border-radius: var(--radius-sm); padding: 12px; }
+.conflict-version h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-3); margin-bottom: 4px; }
+.conflict-version p { font-size: 13px; color: var(--text-2); margin-bottom: 10px; }
+
+.activity-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.activity-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.activity-text { flex: 1 1 auto; color: var(--text-2); }
+.activity-time { color: var(--text-3); font-size: 12px; flex: 0 0 auto; }
+.activity-icon-ok { color: #1e8e3e; font-size: 18px; }
+.activity-icon-conflicto { color: var(--warning); font-size: 18px; }
+.activity-icon-error { color: var(--danger); font-size: 18px; }

@@ -1,0 +1,95 @@
+/* ============================================================
+   Drive Upb — views/jobs.css
+   Consola de trabajos MPI: cola, panel de detalle, log en vivo,
+   formulario de envío.
+   ============================================================ */
+
+.jobs-layout {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+.jobs-queue { flex: 1 1 auto; min-width: 0; }
+
+.jobs-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.jobs-table th {
+  text-align: left;
+  padding: 10px 12px;
+  color: var(--text-3);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  border-bottom: 1px solid var(--border);
+}
+.jobs-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-2); }
+.job-row { cursor: pointer; transition: background .12s; }
+.job-row:hover { background: var(--surface-2); }
+.job-row.selected { background: var(--primary-soft); }
+
+.job-status {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+}
+.job-status-queued    { background: var(--surface-3); color: var(--text-2); }
+.job-status-running   { background: var(--primary-soft); color: var(--primary); }
+.job-status-completed { background: #e6f4ea; color: #1e8e3e; }
+.job-status-failed    { background: var(--danger-soft); color: var(--danger); }
+.job-status-cancelled { background: var(--surface-3); color: var(--text-3); }
+
+/* Panel de detalle (mismo lenguaje visual que details-panel, pero embebido en el layout) */
+.job-detail {
+  flex: 0 0 380px;
+  max-width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.job-detail-empty { font-size: 13px; color: var(--text-3); }
+.job-detail-actions { display: flex; gap: 8px; margin-top: 16px; }
+
+.job-envvars { list-style: none; font-size: 12px; }
+.job-envvars li { padding: 3px 0; }
+.job-envvars code { background: var(--surface-2); border-radius: var(--radius-sm); padding: 2px 6px; }
+
+.job-log {
+  background: #1f1f1f;
+  color: #d4f4d4;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Formulario de envío */
+.job-submit-card { max-width: 560px; }
+.job-submit-form { padding: 4px 20px 0; display: flex; flex-direction: column; gap: 14px; }
+.job-submit-row { display: flex; gap: 12px; }
+.job-submit-row .share-field { flex: 1 1 0; }
+
+.job-env-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+.job-env-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.job-env-row input { flex: 1 1 0; }
+.job-env-remove { flex: 0 0 auto; width: 32px; height: 32px; }
+
+@media (max-width: 900px) {
+  .jobs-layout { flex-direction: column; }
+  .job-detail { flex: 1 1 auto; width: 100%; max-height: none; }
+}

@@ -1,0 +1,587 @@
+// Vista "Archivos" (#/archivos): explorador de Drive Upb.
+// Migrado del prototipo original app.js, ahora sobre la capa js/api/files.js
+// y el enrutador. El estado de esta vista persiste durante toda la sesión
+// (no se reinicia al desmontar), igual que el `state` global del prototipo.
+
+import { $, $$, esc } from '../utils/dom.js';
+import { debounce } from '../utils/debounce.js';
+import { showToast } from '../components/toast.js';
+import { openModal, closeModal, initModalBackdropDismiss } from '../components/modal.js';
+import { createContextMenu } from '../components/contextMenu.js';
+import { initDropzone } from '../components/uploadModal.js';
+import { openPreview } from '../components/previewModal.js';
+import { openShareModal } from '../components/shareModal.js';
+import { openDetailsPanel, closeDetailsPanel } from '../components/detailsPanel.js';
+import { showConfirm, showPrompt } from '../components/dialogs.js';
+import { navigate, getCurrentPath } from '../router.js';
+import {
+  listItems, getQuickAccess, getStorageUsage,
+  createFolder, renameItem, toggleStar, deleteItem,
+} from '../api/files.js';
+
+const SECTION_TITLES = {
+  'my-drive': 'Mi unidad',
+  'shared':   'Compartido conmigo',
+  'computer': 'Computadora',
+  'starred':  'Destacados',
+  'trash':    'Papelera',
+};
+
+const TYPE_META = {
+  folder: { icon: 'folder',      cls: 'folder' },
+  image:  { icon: 'image',       cls: 'image'  },
+  video:  { icon: 'movie',       cls: 'video'  },
+  doc:    { icon: 'description', cls: 'doc'    },
+  sheet:  { icon: 'table_chart', cls: 'sheet'  },
+  slides: { icon: 'slideshow',   cls: 'slides' },
+};
+
+// Estado de la vista: persiste durante toda la sesión (módulo = singleton).
+const viewState = {
+  view: 'list',
+  filter: 'all',
+  section: 'my-drive',
+  search: '',
+  selectedId: null,
+  currentFolderId: null,
+  pathStack: [],
+  folders: [],
+  files: [],
+  quickAccessCache: null,
+  storageCache: null,
+};
+
+let mountedRoot = null; // referencia al #view-root mientras esta vista está activa
+let ctxMenu = null;
+
+const TEMPLATE = `
+  <div class="main-header">
+    <div class="main-title-wrap">
+      <button class="icon-btn breadcrumb-back hidden" id="btn-back" title="Volver" aria-label="Volver">
+        <span class="material-icons">arrow_back</span>
+      </button>
+      <h1 class="main-title" id="section-title">Mi unidad</h1>
+    </div>
+    <div class="breadcrumb hidden" id="breadcrumb"></div>
+    <div class="main-controls">
+      <div class="quick-filters" id="quick-filters">
+        <button class="filter-chip active" data-type="all">Mis archivos</button>
+        <button class="filter-chip" data-type="image">Fotos</button>
+        <button class="filter-chip" data-type="video">Videos</button>
+      </div>
+      <div class="view-toggle">
+        <button class="icon-btn" id="btn-view-info" title="Ver detalles" aria-label="Ver detalles">
+          <span class="material-icons">info_outline</span>
+        </button>
+        <button class="icon-btn" id="btn-view-list" title="Vista de lista" aria-label="Vista de lista">
+          <span class="material-icons">view_headline</span>
+        </button>
+        <button class="icon-btn" id="btn-view-grid" title="Vista de cuadrícula" aria-label="Vista de cuadrícula">
+          <span class="material-icons">view_module</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="quick-access" id="quick-access">
+    <h2 class="qa-title">Acceso rápido</h2>
+    <div class="qa-grid" id="qa-grid"></div>
+  </div>
+
+  <section class="block">
+    <h2 class="block-title">Carpetas</h2>
+    <div class="items-container list-view" id="folders-container"></div>
+  </section>
+
+  <section class="block">
+    <h2 class="block-title">Archivos</h2>
+    <div class="items-container list-view" id="files-container"></div>
+  </section>
+`;
+
+/* ---------- Utilidades de render ---------- */
+
+const listHeaderHTML = () => viewState.view === 'list' ? `
+  <div class="list-header">
+    <span></span>
+    <span>Nombre</span>
+    <span>Propietario</span>
+    <span>Modificación</span>
+    <span></span>
+  </div>
+` : '';
+
+const thumbHTML = (item) => {
+  const m = TYPE_META[item.type] || TYPE_META.doc;
+  return `<span class="material-icons ${m.cls}">${m.icon}</span>`;
+};
+
+const emptyStateHTML = (icon, text) => `
+  <div class="empty-state">
+    <span class="material-icons">${icon}</span>
+    <p>${esc(text)}</p>
+  </div>
+`;
+
+const setViewClass = (container) => {
+  container.classList.remove('list-view', 'grid-view');
+  container.classList.add(viewState.view === 'grid' ? 'grid-view' : 'list-view');
+};
+
+const itemRowHTML = (item, kind) => viewState.view === 'list' ? `
+  <div class="item-row" data-id="${item.id}" data-kind="${kind}" data-name="${esc(item.name)}" data-starred="${item.starred}" tabindex="0" role="button" aria-label="${esc(item.name)}">
+    <div class="item-thumb">${thumbHTML(item)}</div>
+    <div class="item-name">${esc(item.name)}</div>
+    <div class="item-meta">${esc(item.meta)}</div>
+    <div class="item-date">${esc(item.date)}</div>
+    <div class="item-thumb">${item.starred ? '<span class="material-icons star-badge">star</span>' : ''}</div>
+  </div>
+` : `
+  <div class="grid-card" data-id="${item.id}" data-kind="${kind}" data-name="${esc(item.name)}" data-starred="${item.starred}" tabindex="0" role="button" aria-label="${esc(item.name)}">
+    <div class="grid-thumb">${thumbHTML(item)}</div>
+    <div class="grid-meta">
+      <span class="item-name">${esc(item.name)}</span>
+      <span class="item-date">${esc(item.date)}</span>
+    </div>
+  </div>
+`;
+
+function findItem(id) {
+  return viewState.folders.find((x) => x.id === id) || viewState.files.find((x) => x.id === id);
+}
+
+function renderQuickAccess() {
+  const grid = $('#qa-grid', mountedRoot);
+  const wrap = $('#quick-access', mountedRoot);
+  if (!grid || !wrap) return;
+  const visible = viewState.section === 'my-drive' && !viewState.currentFolderId;
+  wrap.style.display = visible ? '' : 'none';
+  if (!visible) return;
+
+  const list = viewState.quickAccessCache || [];
+  grid.innerHTML = list.map((q) => `
+    <div class="qa-card ${q.color}" data-qa-id="${esc(q.id)}" data-qa="${esc(q.name)}" title="${esc(q.name)}" tabindex="0" role="button" aria-label="${esc(q.name)}">
+      <span class="material-icons">${q.icon}</span>
+      <span class="qa-name">${esc(q.name)}</span>
+    </div>
+  `).join('');
+
+  const activateQaCard = (card) => {
+    const folderId = card.dataset.qaId;
+    const target = viewState.folders.find((f) => f.id === folderId);
+    if (target) {
+      openFolder(target);
+    } else {
+      showToast('Acceso rápido: ' + card.dataset.qa);
+    }
+  };
+
+  $$('.qa-card', grid).forEach((card) => {
+    card.addEventListener('click', () => activateQaCard(card));
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activateQaCard(card); }
+    });
+  });
+}
+
+function renderFolders() {
+  const container = $('#folders-container', mountedRoot);
+  if (!container) return;
+  setViewClass(container);
+  container.innerHTML = listHeaderHTML() + (viewState.folders.length
+    ? viewState.folders.map((f) => itemRowHTML(f, 'folder')).join('')
+    : emptyStateHTML('folder_open', 'No hay carpetas'));
+  bindItems(container);
+}
+
+function renderFiles() {
+  const container = $('#files-container', mountedRoot);
+  if (!container) return;
+  setViewClass(container);
+  container.innerHTML = listHeaderHTML() + (viewState.files.length
+    ? viewState.files.map((f) => itemRowHTML(f, 'file')).join('')
+    : emptyStateHTML('insert_drive_file', 'No hay archivos'));
+  bindItems(container);
+}
+
+function bindItems(container) {
+  $$('.item-row, .grid-card', container).forEach((el) => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('[data-act]')) return;
+      $$('.item-row, .grid-card', mountedRoot).forEach((n) => n.classList.remove('selected'));
+      el.classList.add('selected');
+      viewState.selectedId = el.dataset.id;
+      openItem(el);
+    });
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      viewState.selectedId = el.dataset.id;
+      $$('.item-row, .grid-card', mountedRoot).forEach((n) => n.classList.remove('selected'));
+      el.classList.add('selected');
+      ctxMenu && ctxMenu.show(e.clientX, e.clientY);
+    });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        $$('.item-row, .grid-card', mountedRoot).forEach((n) => n.classList.remove('selected'));
+        el.classList.add('selected');
+        viewState.selectedId = el.dataset.id;
+        openItem(el);
+      }
+    });
+  });
+}
+
+function openItem(el) {
+  const kind = el.dataset.kind;
+  const id = el.dataset.id;
+  if (kind === 'folder') {
+    const folder = viewState.folders.find((f) => f.id === id) || findItem(id);
+    if (folder) openFolder(folder);
+    return;
+  }
+  openPreview(findItem(id), TYPE_META[findItem(id)?.type] || TYPE_META.doc);
+}
+
+/* ---------- Carga de datos ---------- */
+
+async function loadAndRenderItems() {
+  const { section, currentFolderId, filter, search } = viewState;
+  const { folders, files } = await listItems({ section, parentId: currentFolderId, type: filter, search });
+  viewState.folders = folders;
+  viewState.files = files;
+  renderQuickAccess();
+  renderFolders();
+  renderFiles();
+}
+
+/* ---------- Navegación de carpetas + breadcrumb ---------- */
+
+function findFolderById(id) {
+  return viewState.folders.find((f) => f.id === id) || null;
+}
+
+function buildPathFromCache(folderId) {
+  // Con los datos ya cargados en memoria (mock), reconstruimos la ruta.
+  // Si la carpeta no está en el listado actual, al menos mostramos su nombre.
+  const path = [];
+  let cur = folderId;
+  let guard = 0;
+  while (cur && guard++ < 50) {
+    const f = viewState.pathStack.find((p) => p.id === cur) || findFolderById(cur);
+    if (!f) break;
+    path.unshift(f);
+    cur = f.parentId;
+  }
+  return path;
+}
+
+async function openFolder(folder) {
+  if (!folder) return;
+  viewState.currentFolderId = folder.id;
+  viewState.pathStack = [...buildPathFromCache(folder.parentId), folder];
+  viewState.selectedId = null;
+  updateBreadcrumb();
+  await loadAndRenderItems();
+  showToast('Abriendo: ' + folder.name);
+}
+
+async function goToRoot() {
+  viewState.currentFolderId = null;
+  viewState.pathStack = [];
+  viewState.selectedId = null;
+  const title = $('#section-title', mountedRoot);
+  if (title) title.textContent = SECTION_TITLES[viewState.section] || 'Mi unidad';
+  updateBreadcrumb();
+  await loadAndRenderItems();
+}
+
+async function goToFolder(folderId) {
+  if (!folderId) { await goToRoot(); return; }
+  const folder = viewState.pathStack.find((f) => f.id === folderId) || findFolderById(folderId);
+  if (folder) await openFolder(folder);
+}
+
+async function goUpOneLevel() {
+  if (viewState.pathStack.length <= 1) {
+    await goToRoot();
+  } else {
+    const parent = viewState.pathStack[viewState.pathStack.length - 2];
+    await goToFolder(parent.id);
+  }
+}
+
+function updateBreadcrumb() {
+  const crumb = $('#breadcrumb', mountedRoot);
+  const title = $('#section-title', mountedRoot);
+  const backBtn = $('#btn-back', mountedRoot);
+  const inFolder = !!viewState.currentFolderId;
+
+  if (backBtn) backBtn.classList.toggle('hidden', !inFolder);
+  if (crumb) crumb.classList.toggle('hidden', !inFolder);
+
+  if (title) {
+    title.textContent = inFolder
+      ? (viewState.pathStack[viewState.pathStack.length - 1] || {}).name
+      : (SECTION_TITLES[viewState.section] || 'Mi unidad');
+  }
+
+  if (!crumb) return;
+
+  const crumbs = [{ id: null, name: SECTION_TITLES['my-drive'] }];
+  viewState.pathStack.forEach((f) => crumbs.push({ id: f.id, name: f.name }));
+
+  crumb.innerHTML = crumbs.map((c, i) => {
+    const isCurrent = i === crumbs.length - 1 && !!c.id;
+    const cls = 'crumb' + (isCurrent ? ' current' : '');
+    const sep = i > 0 ? '<span class="material-icons crumb-sep" aria-hidden="true">chevron_right</span>' : '';
+    return `${sep}<button type="button" class="${cls}" data-folder="${c.id || ''}" ${isCurrent ? 'aria-current="page"' : ''}>${esc(c.name)}</button>`;
+  }).join('');
+
+  $$('.crumb', crumb).forEach((el) => {
+    el.addEventListener('click', () => {
+      if (el.classList.contains('current')) return;
+      goToFolder(el.dataset.folder || null);
+    });
+  });
+}
+
+/* ---------- Controles: chips, vista, búsqueda ---------- */
+
+function initControls() {
+  $$('#quick-filters .filter-chip', mountedRoot).forEach((chip) => {
+    chip.addEventListener('click', async () => {
+      $$('#quick-filters .filter-chip', mountedRoot).forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      viewState.filter = chip.dataset.type;
+      await loadAndRenderItems();
+    });
+  });
+
+  const setActiveView = (active) => {
+    ['#btn-view-list', '#btn-view-grid'].forEach((sel) => {
+      const b = $(sel, mountedRoot); if (b) b.classList.remove('active');
+    });
+    active.classList.add('active');
+  };
+
+  const viewList = $('#btn-view-list', mountedRoot);
+  const viewGrid = $('#btn-view-grid', mountedRoot);
+  if (viewList) {
+    viewList.classList.add('active');
+    viewList.addEventListener('click', () => {
+      viewState.view = 'list'; setActiveView(viewList);
+      renderFolders(); renderFiles();
+    });
+  }
+  if (viewGrid) {
+    viewGrid.addEventListener('click', () => {
+      viewState.view = 'grid'; setActiveView(viewGrid);
+      renderFolders(); renderFiles();
+    });
+  }
+  if (viewState.view === 'grid' && viewGrid) setActiveView(viewGrid);
+
+  const viewInfo = $('#btn-view-info', mountedRoot);
+  if (viewInfo) {
+    viewInfo.addEventListener('click', () => {
+      if (!viewState.selectedId) { showToast('Selecciona un elemento', 'error'); return; }
+      const item = findItem(viewState.selectedId);
+      if (item) openDetailsPanel(item);
+    });
+  }
+
+  const backBtn = $('#btn-back', mountedRoot);
+  if (backBtn) backBtn.addEventListener('click', goUpOneLevel);
+}
+
+function initSearch() {
+  const input = $('#search-input');
+  if (!input) return;
+  const onInput = debounce(async () => {
+    viewState.search = input.value.trim().toLowerCase();
+    await loadAndRenderItems();
+  }, 150);
+  input.addEventListener('input', onInput);
+  return () => input.removeEventListener('input', onInput);
+}
+
+/* ---------- Menú contextual ---------- */
+
+async function handleContextAction(act, item) {
+  if (!item) { showToast('Nada seleccionado', 'error'); return; }
+  const isFolder = viewState.folders.some((f) => f.id === item.id);
+
+  switch (act) {
+    case 'open':
+      if (isFolder) {
+        const folder = viewState.folders.find((f) => f.id === item.id);
+        if (folder) await openFolder(folder);
+      } else {
+        openPreview(item, TYPE_META[item.type] || TYPE_META.doc);
+      }
+      break;
+    case 'download':
+      showToast('Descargando: ' + item.name, 'success');
+      break;
+    case 'share':
+      openShareModal(item);
+      break;
+    case 'details':
+      openDetailsPanel(item);
+      break;
+    case 'rename': {
+      const newName = await showPrompt('Nuevo nombre:', item.name);
+      if (newName && newName.trim()) {
+        await renameItem({ id: item.id, name: newName.trim() });
+        await loadAndRenderItems();
+        showToast('Renombrado', 'success');
+      }
+      break;
+    }
+    case 'star':
+      await toggleStar({ id: item.id });
+      await loadAndRenderItems();
+      showToast(!item.starred ? 'Destacado' : 'Quitado de destacados');
+      break;
+    case 'move':
+      showToast('Mover a... (demo)');
+      break;
+    case 'delete': {
+      const confirmed = await showConfirm(`¿Eliminar "${item.name}"?`, { confirmLabel: 'Eliminar', danger: true });
+      if (confirmed) {
+        await deleteItem({ id: item.id });
+        viewState.selectedId = null;
+        await loadAndRenderItems();
+        showToast('Eliminado', 'success');
+      }
+      break;
+    }
+  }
+}
+
+/* ---------- Modal de subida ---------- */
+
+let dropzoneCleanup = null;
+function initUploadModal() {
+  const dz = $('#dropzone');
+  if (dz) {
+    dropzoneCleanup = initDropzone(dz, {
+      onFilesSelected: (fileList) => showToast(fileList.length + ' archivo(s) preparado(s) (demo)'),
+    });
+  }
+}
+
+/* ---------- Menú "Nuevo" (invocado desde main.js) ---------- */
+
+export async function handleNewAction(action) {
+  switch (action) {
+    case 'upload-folder':
+      openModal('modal-upload');
+      break;
+    case 'upload-folder-carp':
+      openModal('modal-upload');
+      showToast('Carpeta lista para subir (demo)');
+      break;
+    case 'create-folder': {
+      const name = await showPrompt('Nombre de la nueva carpeta:', 'Carpeta sin título');
+      if (name && name.trim()) {
+        await createFolder({ name: name.trim(), parentId: viewState.currentFolderId });
+        if (getCurrentPath() !== '/archivos') { navigate('/archivos'); }
+        else { await loadAndRenderItems(); }
+        showToast('Carpeta creada', 'success');
+      }
+      break;
+    }
+    default:
+      showToast('Demo: ' + action);
+  }
+}
+
+/* ---------- Navegación de secciones del sidebar (invocado desde main.js) ---------- */
+
+export function goToSection(section) {
+  viewState.section = section;
+  viewState.currentFolderId = null;
+  viewState.pathStack = [];
+  viewState.selectedId = null;
+  updateSectionNavUI(section);
+  if (getCurrentPath() === '/archivos' && mountedRoot) {
+    updateBreadcrumb();
+    loadAndRenderItems();
+  } else {
+    navigate('/archivos');
+  }
+}
+
+function updateSectionNavUI(section) {
+  $$('.nav-item[data-section]').forEach((n) => n.classList.toggle('active', n.dataset.section === section));
+}
+
+/* ---------- Teclado (activo mientras la vista está montada) ---------- */
+
+function initKeyboard() {
+  const onKeydown = (e) => {
+    if (e.key === 'Escape') {
+      ctxMenu && ctxMenu.hide();
+    }
+    if (e.key === 'Backspace' && viewState.currentFolderId) {
+      const active = document.activeElement;
+      const tag = active && active.tagName;
+      const editable = active && (active.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA');
+      if (!editable) {
+        e.preventDefault();
+        goUpOneLevel();
+      }
+    }
+  };
+  document.addEventListener('keydown', onKeydown);
+  return () => document.removeEventListener('keydown', onKeydown);
+}
+
+/* ---------- Ciclo de vida de la vista (llamado por el router) ---------- */
+
+export async function mount(root) {
+  root.innerHTML = TEMPLATE;
+  mountedRoot = root;
+
+  updateSectionNavUI(viewState.section);
+  initModalBackdropDismiss();
+  initControls();
+  initUploadModal();
+  ctxMenu = createContextMenu('context-menu', (act) => {
+    const item = viewState.selectedId ? findItem(viewState.selectedId) : null;
+    handleContextAction(act, item);
+  });
+  const unbindSearch = initSearch();
+  const unbindKeyboard = initKeyboard();
+
+  if (!viewState.quickAccessCache) viewState.quickAccessCache = await getQuickAccess();
+  if (!viewState.storageCache) viewState.storageCache = await getStorageUsage();
+  renderStorageBar();
+
+  updateBreadcrumb();
+  await loadAndRenderItems();
+
+  return function unmount() {
+    if (dropzoneCleanup) dropzoneCleanup();
+    if (ctxMenu) ctxMenu.destroy();
+    if (unbindSearch) unbindSearch();
+    if (unbindKeyboard) unbindKeyboard();
+    closeDetailsPanel();
+    closeModal('modal-share');
+    mountedRoot = null;
+    ctxMenu = null;
+    dropzoneCleanup = null;
+  };
+}
+
+function renderStorageBar() {
+  const bar = $('.storage-bar');
+  const text = $('.storage-text');
+  if (!bar || !viewState.storageCache) return;
+  const { used, total } = viewState.storageCache;
+  const pct = Math.min(100, (used / total) * 100);
+  bar.style.width = pct.toFixed(2) + '%';
+  if (text) text.textContent = `${used} GB de ${(total / 1024).toFixed(2)} TB`;
+}
