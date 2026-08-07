@@ -1,0 +1,67 @@
+/* ============================================================
+   Drive Upb — tokens.css
+   Variables de color, tipografía, espaciado y tema claro/oscuro.
+   ============================================================ */
+
+:root {
+  /* Paleta base (Material Design 3 / Google Drive) */
+  --bg:               #fff;
+  --surface:          #fff;
+  --surface-2:        #f8fafd;   /* fondos sutiles (chips, hover) */
+  --surface-3:        #eef1f6;   /* hover fuerte / separadores */
+  --border:           #e5e7eb;
+  --border-strong:    #d5d9e0;
+
+  --text:             #1f1f1f;
+  --text-2:           #444746;
+  --text-3:           #5f6368;
+  --text-disabled:    #bdc1c6;
+
+  --primary:          #1a73e8;
+  --primary-hover:    #1765cc;
+  --primary-soft:     #e8f0fe;
+  --on-primary:       #fff;
+
+  --danger:           #d93025;
+  --danger-soft:      #fce8e6;
+  --on-danger:        #fff;
+
+  --warning:          #f9ab00;
+  --star:             #f6c945;
+
+  --shadow-1: 0 1px 2px 0 rgba(60,64,67,.30), 0 1px 3px 1px rgba(60,64,67,.15);
+  --shadow-2: 0 2px 6px 0 rgba(60,64,67,.18), 0 1px 2px 0 rgba(60,64,67,.08);
+  --shadow-3: 0 4px 12px rgba(60,64,67,.18), 0 1px 3px rgba(60,64,67,.10);
+
+  --radius-sm: 8px;
+  --radius:    12px;
+  --radius-lg: 16px;
+  --radius-full: 999px;
+
+  --topbar-h: 64px;
+  --sidebar-w: 256px;
+
+  --font: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+/* Modo oscuro opcional */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:            #1e1f20;
+    --surface:       #1e1f20;
+    --surface-2:     #28292c;
+    --surface-3:     #35363a;
+    --border:        #3c3d40;
+    --border-strong: #535659;
+    --text:          #e3e3e3;
+    --text-2:        #c4c7c5;
+    --text-3:        #9aa0a6;
+    --text-disabled: #5f6368;
+    --primary:       #8ab4f8;
+    --primary-hover: #adc8f9;
+    --primary-soft:  #283a4e;
+    --on-primary:   #062e6b;
+    --danger:        #f28b82;
+    --danger-soft:   #45272a;
+  }
+}

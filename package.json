@@ -1,0 +1,10 @@
+{
+  "name": "drive-upb",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Drive Upb — SPA vanilla + servidor estático Node (sin dependencias externas)",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

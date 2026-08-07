@@ -1,0 +1,153 @@
+/* ============================================================
+   Drive Upb — components/sharing.css
+   Modal "Compartir" (personas + enlace externo) y panel lateral
+   de detalles (propietario, grupo, permisos estilo Unix, versiones).
+   ============================================================ */
+
+/* ---------- Modal Compartir ---------- */
+.share-card { max-width: 520px; }
+
+.share-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+.share-tab {
+  padding: 10px 4px;
+  margin-right: 20px;
+  font-size: 14px;
+  color: var(--text-3);
+  border-bottom: 2px solid transparent;
+}
+.share-tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 500; }
+
+.share-tab-panel { padding: 16px 20px 4px; min-height: 180px; }
+
+.share-loading, .share-error { color: var(--text-3); font-size: 13px; padding: 12px 0; }
+.share-error { color: var(--danger); }
+.share-empty { color: var(--text-3); font-size: 13px; padding: 8px 0; list-style: none; }
+
+.share-add-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.share-select {
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  flex: 1 1 160px;
+}
+.share-select-role { flex: 0 0 120px; }
+
+.share-people-list, .share-link-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.share-person, .share-link-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.share-person .material-icons, .share-link-item .material-icons { color: var(--text-3); font-size: 20px; }
+.share-person-info { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
+.share-person-name, .share-link-url { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-person-email { font-size: 12px; color: var(--text-3); }
+.share-role-badge {
+  font-size: 12px;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border-radius: var(--radius-full);
+  padding: 3px 10px;
+  flex: 0 0 auto;
+}
+.share-remove-btn, .share-revoke-btn { flex: 0 0 auto; width: 32px; height: 32px; }
+
+.share-link-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
+.share-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-3); flex: 1 1 140px; }
+
+/* ---------- Panel lateral de detalles ---------- */
+.details-panel {
+  position: fixed;
+  top: var(--topbar-h);
+  right: 0;
+  bottom: 0;
+  width: 360px;
+  max-width: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-3);
+  overflow-y: auto;
+  z-index: 90;
+  animation: menu-in .15s ease;
+}
+
+.details-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.details-head h3 { font-size: 16px; color: var(--text); }
+
+.details-body { padding: 16px 20px 32px; }
+.details-loading { padding: 20px; color: var(--text-3); font-size: 13px; }
+
+.details-item-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  color: var(--text);
+  font-weight: 500;
+  margin-bottom: 16px;
+  word-break: break-word;
+}
+.details-item-name .material-icons { color: var(--primary); font-size: 24px; }
+
+.details-facts { font-size: 13px; margin-bottom: 16px; }
+.details-facts dt { color: var(--text-3); margin-top: 8px; }
+.details-facts dd { color: var(--text); margin: 2px 0 0; }
+
+.details-subtitle {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--text-3);
+  margin: 20px 0 8px;
+}
+
+.perm-matrix { width: 100%; border-collapse: collapse; font-size: 12px; }
+.perm-matrix th, .perm-matrix td { text-align: center; padding: 6px 4px; color: var(--text-2); }
+.perm-matrix thead th:first-child { text-align: left; }
+.perm-matrix tbody th { text-align: left; font-weight: 400; color: var(--text-3); }
+.perm-mode-display {
+  font-family: monospace;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin: 8px 0 12px;
+}
+
+.details-versions { list-style: none; font-size: 13px; }
+.details-versions li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+}
+.details-versions li span:first-child { color: var(--text); }
+
+@media (max-width: 720px) {
+  .details-panel { width: 100%; top: 0; }
+}

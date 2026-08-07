@@ -1,0 +1,79 @@
+/* ============================================================
+   Drive Upb — views/monitoring.css
+   Dashboard de monitoreo: tarjetas resumen, gráficas en <canvas>,
+   semáforo de servicios, tabla de nodos, alertas.
+   ============================================================ */
+
+.monitor-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.monitor-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.monitor-card-label { font-size: 12px; color: var(--text-3); text-transform: uppercase; letter-spacing: .4px; }
+.monitor-card-value { font-size: 28px; color: var(--text); font-weight: 500; }
+
+.monitor-legend { display: flex; gap: 16px; margin-bottom: 8px; font-size: 12px; color: var(--text-3); }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.legend-dot-cpu { background: #1a73e8; }
+.legend-dot-mem { background: #ec407a; }
+.legend-dot-storage { background: #2e7d32; }
+
+.monitor-chart-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  height: 220px;
+}
+.monitor-chart-wrap canvas { width: 100%; height: 100%; display: block; }
+
+.service-semaphore { display: flex; flex-wrap: wrap; gap: 20px; }
+.service-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); }
+.service-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.service-dot-up { background: #1e8e3e; }
+.service-dot-degraded { background: var(--warning); }
+.service-dot-down { background: var(--danger); }
+
+.report-controls { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 12px; flex-wrap: wrap; }
+.report-controls .share-field { flex: 0 0 160px; }
+
+.alert-form { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 16px; flex-wrap: wrap; }
+.alert-form .share-field { flex: 0 0 160px; }
+
+.alert-rules, .alert-triggered { list-style: none; display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.alert-rule-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-2);
+}
+.alert-rule-remove { width: 28px; height: 28px; }
+.alert-triggered-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.alert-triggered-item .material-icons { font-size: 18px; }
+
+@media (max-width: 720px) {
+  .monitor-cards { grid-template-columns: repeat(2, 1fr); }
+}

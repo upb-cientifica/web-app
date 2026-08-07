@@ -1,0 +1,265 @@
+/* ============================================================
+   Drive Upb — layout.css
+   Estructura general: topbar, sidebar, contenedor principal.
+   ============================================================ */
+
+/* ============================================================
+   TOPBAR
+   ============================================================ */
+.topbar {
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+
+.topbar-left, .topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.topbar-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 720px;
+  display: flex;
+  align-items: center;
+  background: var(--surface-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  padding: 0 16px;
+  height: 48px;
+  gap: 12px;
+  transition: background .15s, box-shadow .15s;
+}
+.topbar-search:focus-within {
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+.topbar-search .search-icon {
+  color: var(--text-3);
+  font-size: 20px;
+}
+.topbar-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 16px;
+  color: var(--text);
+  height: 100%;
+}
+.topbar-search input::placeholder { color: var(--text-3); }
+
+/* Logo */
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  user-select: none;
+}
+.logo-icon {
+  color: var(--primary);
+  font-size: 26px;
+}
+.logo-text {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: .2px;
+}
+
+/* Avatar */
+.avatar-wrap { position: relative; }
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, var(--primary), #4a9bff);
+  color: var(--on-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 500;
+  margin-left: 8px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.avatar:hover { box-shadow: var(--shadow-1); }
+
+/* ============================================================
+   CUERPO DE LA APP
+   ============================================================ */
+.app-body {
+  display: flex;
+  height: calc(100vh - var(--topbar-h));
+  overflow: hidden;
+}
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+.sidebar {
+  width: var(--sidebar-w);
+  flex: 0 0 var(--sidebar-w);
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  padding: 8px 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+/* Botón "Nuevo" */
+.new-button-wrap { position: relative; padding: 8px 16px 4px; }
+.new-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 24px 0 16px;
+  gap: 12px;
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+  font-size: 14px;
+  color: var(--text-3);
+  box-shadow: var(--shadow-1);
+  transition: box-shadow .15s, background .15s, transform .05s;
+}
+.new-btn:hover { background: var(--surface-3); box-shadow: var(--shadow-2); color: var(--primary); }
+.new-btn:active { transform: scale(.98); }
+.new-icon { color: var(--primary); }
+
+/* Menú desplegable de "Nuevo" */
+.new-menu {
+  position: absolute;
+  top: 64px;
+  left: 16px;
+  width: 320px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-3);
+  padding: 8px 0;
+  z-index: 60;
+  animation: menu-in .12s ease;
+}
+.new-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 12px 16px;
+  text-align: left;
+  color: var(--text-2);
+  transition: background .12s;
+}
+.new-menu-item:hover { background: var(--surface-2); }
+.new-menu-item .material-icons { color: var(--text-3); font-size: 20px; }
+.new-menu hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+
+/* Navegación */
+.nav { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 0 16px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  color: var(--text-2);
+  font-size: 14px;
+  text-align: left;
+  transition: background .12s;
+  white-space: nowrap;
+}
+.nav-item .material-icons { color: var(--text-3); font-size: 20px; }
+.nav-item:hover { background: var(--surface-3); }
+.nav-item.active { background: var(--primary-soft); color: var(--primary); font-weight: 500; }
+.nav-item.active .material-icons { color: var(--primary); }
+
+.sidebar-sep { border: none; border-top: 1px solid var(--border); margin: 8px 12px; }
+
+/* Almacenamiento */
+.storage {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.storage-icon { color: var(--text-3); font-size: 22px; }
+.storage-bar-wrap {
+  width: 100%;
+  height: 4px;
+  background: var(--surface-3);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+.storage-bar {
+  height: 100%;
+  width: 1%;                 /* ajustado por JS */
+  background: var(--primary);
+  border-radius: inherit;
+  transition: width .4s ease;
+}
+.storage-text { color: var(--text-3); font-size: 13px; }
+
+/* ============================================================
+   ÁREA PRINCIPAL (contenedor genérico; cada vista define su
+   propio contenido dentro de #view-root)
+   ============================================================ */
+.main {
+  flex: 1 1 auto;
+  min-width: 0; /* evita que el contenido intrínseco (p. ej. el carrusel de
+                   acceso rápido) empuje el ancho de toda la página en vez
+                   de desplazarse localmente */
+  overflow-y: auto;
+  padding: 8px 24px 48px;
+  background: var(--bg);
+}
+
+/* ============================================================
+   MODO AUTENTICACIÓN: oculta el chrome de la app (topbar/sidebar)
+   en pantallas públicas como login y enrolamiento MFA.
+   ============================================================ */
+body.auth-mode .topbar,
+body.auth-mode .sidebar {
+  display: none;
+}
+body.auth-mode .app-body { height: 100vh; }
+body.auth-mode .main { padding: 0; }
+
+/* ============================================================
+   RESPONSIVE (estructura general)
+   ============================================================ */
+@media (max-width: 720px) {
+  .topbar-search { max-width: none; }
+  .logo-text { display: none; }
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: var(--topbar-h);
+    height: calc(100vh - var(--topbar-h));
+    transform: translateX(-100%);
+    transition: transform .2s ease;
+    z-index: 40;
+  }
+  .sidebar.open { transform: none; }
+  .main { padding: 8px 12px 48px; }
+}
