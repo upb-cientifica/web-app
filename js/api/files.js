@@ -2,7 +2,7 @@
 // Misma firma en modo mock y modo real; el interruptor está en js/config.js.
 
 import { USE_MOCKS, API_BASE } from '../config.js';
-import { request } from './client.js';
+import { request, qs } from './client.js';
 import { delay, genId, clone } from './mock/helpers.js';
 import { folders, files, quickAccess, STORAGE, principals, shares, externalLinks } from './mock/data.js';
 import { modeToTriads } from '../utils/permissions.js';
@@ -188,33 +188,197 @@ async function revokeExternalLinkMock({ id, linkId }) {
   externalLinks[id] = externalLinks[id].filter((l) => l.id !== linkId);
 }
 
-// ---------- Modo real (backend HTTP aún no disponible) ----------
+// ---------- Modo real: contra el Service Bus → Shared File Server ----------
+//
+// El Shared File Server identifica cada nodo por su **ruta** dentro del Home,
+// no por un id opaco. Aquí la ruta ES el id: es única, estable y permite
+// deducir el padre sin una llamada extra.
 
-async function listItemsReal({ section, parentId, type, search } = {}) {
-  const params = new URLSearchParams();
-  if (section) params.set('section', section);
-  if (parentId) params.set('parentId', parentId);
-  if (type && type !== 'all') params.set('type', type);
-  if (search) params.set('q', search);
-  return request(`${API_BASE.files}/items?${params.toString()}`);
+const GB = 1024 ** 3;
+
+function padreDe(ruta) {
+  const i = ruta.lastIndexOf('/');
+  return i <= 0 ? '/' : ruta.slice(0, i);
 }
 
-const getQuickAccessReal = () => request(`${API_BASE.files}/quick-access`);
-const getStorageUsageReal = () => request(`${API_BASE.files}/storage`);
-const createFolderReal = (payload) => request(`${API_BASE.files}/folders`, { method: 'POST', body: payload });
-const createFileReal = (payload) => request(`${API_BASE.files}/items`, { method: 'POST', body: payload });
-const renameItemReal = ({ id, name }) => request(`${API_BASE.files}/items/${id}`, { method: 'PATCH', body: { name } });
-const toggleStarReal = ({ id }) => request(`${API_BASE.files}/items/${id}/star`, { method: 'POST' });
-const deleteItemReal = ({ id }) => request(`${API_BASE.files}/items/${id}`, { method: 'DELETE' });
+function tamanoLegible(bytes) {
+  if (!bytes) return '—';
+  const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let n = bytes; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i += 1; }
+  return `${n < 10 ? n.toFixed(1) : Math.round(n)} ${u[i]}`;
+}
 
-const getItemDetailsReal = ({ id }) => request(`${API_BASE.files}/items/${id}/details`);
-const updatePermissionsReal = ({ id, ...body }) => request(`${API_BASE.files}/items/${id}/permissions`, { method: 'PATCH', body });
-const listSharesReal = ({ id }) => request(`${API_BASE.files}/items/${id}/shares`);
-const addShareReal = ({ id, ...body }) => request(`${API_BASE.files}/items/${id}/shares`, { method: 'POST', body });
-const removeShareReal = ({ id, shareId }) => request(`${API_BASE.files}/items/${id}/shares/${shareId}`, { method: 'DELETE' });
-const listExternalLinksReal = ({ id }) => request(`${API_BASE.files}/items/${id}/links`);
-const createExternalLinkReal = ({ id, ...body }) => request(`${API_BASE.files}/items/${id}/links`, { method: 'POST', body });
-const revokeExternalLinkReal = ({ id, linkId }) => request(`${API_BASE.files}/items/${id}/links/${linkId}`, { method: 'DELETE' });
+function fechaLegible(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('es-CO', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  });
+}
+
+/** Traduce la clasificación del servicio al tipo que dibuja la interfaz. */
+function aTipo(n) {
+  if (n.esCarpeta) return 'folder';
+  switch (n.tipo) {
+    case 'imagen': return 'image';
+    case 'video': return 'video';
+    case 'dataset': return 'sheet';
+    default: return 'doc';
+  }
+}
+
+/** Nodo del Shared File Server → Item de la interfaz. */
+function aItem(n) {
+  return {
+    id: n.ruta,
+    name: n.nombre,
+    type: aTipo(n),
+    meta: n.esCarpeta ? 'Carpeta' : tamanoLegible(n.tamanoBytes),
+    date: fechaLegible(n.modificadoEn),
+    starred: !!n.destacado,
+    parentId: padreDe(n.ruta),
+    owner: n.propietario,
+    group: n.grupo || '',
+    mode: n.permisos?.octal || '640',
+    sizeBytes: n.tamanoBytes || 0,
+    version: n.version || 0,
+    miAcceso: n.miAcceso || '',
+  };
+}
+
+const RUTA_SECCION = { starred: 'destacados', trash: 'papelera' };
+
+async function listItemsReal({ section = 'my-drive', parentId = null, type = 'all', search = '' } = {}) {
+  let d;
+  if (section === 'shared') {
+    // Lo que otros me compartieron: llega como lista plana, ya con propietario.
+    const filas = await request(`${API_BASE.files}/compartidos-conmigo`);
+    d = { carpetas: [], archivos: filas || [] };
+  } else if (RUTA_SECCION[section]) {
+    d = await request(`${API_BASE.files}/files${qs({ seccion: RUTA_SECCION[section] })}`);
+  } else {
+    d = await request(`${API_BASE.files}/files${qs({ ruta: parentId || '/' })}`);
+  }
+
+  const q = search.trim().toLowerCase();
+  const filtra = (it) => (type === 'all' || it.type === type || (type === 'folder' && it.type === 'folder'))
+    && (!q || it.name.toLowerCase().includes(q));
+
+  return {
+    folders: (d.carpetas || []).map(aItem).filter(filtra),
+    files: (d.archivos || []).map(aItem).filter(filtra),
+  };
+}
+
+/** Acceso rápido: las carpetas de primer nivel del Home. */
+async function getQuickAccessReal() {
+  const d = await request(`${API_BASE.files}/files${qs({ ruta: '/' })}`);
+  const colores = ['#4c8dff', '#a371f7', '#e0537b', '#2fa37a', '#d29922'];
+  return (d.carpetas || []).slice(0, 5).map((c, i) => ({
+    id: c.ruta, name: c.nombre, icon: 'folder', color: colores[i % colores.length],
+  }));
+}
+
+async function getStorageUsageReal() {
+  const d = await request(`${API_BASE.files}/home`);
+  return {
+    used: Math.round(((d.usadoBytes || 0) / GB) * 100) / 100,
+    total: Math.round(((d.cuotaBytes || 0) / GB) * 100) / 100,
+  };
+}
+
+const createFolderReal = async ({ name, parentId }) =>
+  aItem(await request(`${API_BASE.files}/files/carpeta${qs({ ruta: parentId || '/', nombre: name })}`,
+    { method: 'POST' }));
+
+/** Crea un archivo con contenido mínimo (p. ej. el resultado de un trabajo MPI). */
+const createFileReal = async ({ name, parentId }) =>
+  aItem(await request(`${API_BASE.files}/files/upload${qs({ ruta: parentId || '/', nombre: name })}`,
+    { method: 'POST', body: { creadoPor: 'web' } }));
+
+const renameItemReal = async ({ id, name }) =>
+  aItem(await request(`${API_BASE.files}/files${qs({ ruta: id, nuevoNombre: name })}`, { method: 'PATCH' }));
+
+// Sin `valor`, el servicio conmuta el destacado.
+const toggleStarReal = async ({ id }) =>
+  aItem(await request(`${API_BASE.files}/files/destacar${qs({ ruta: id })}`, { method: 'POST' }));
+
+/** Borrado reversible: va a la papelera. Con `definitivo` se elimina de verdad. */
+const deleteItemReal = ({ id, definitivo = false }) =>
+  request(`${API_BASE.files}/files${qs({ ruta: id, definitivo: definitivo ? 'true' : '' })}`,
+    { method: 'DELETE' });
+
+const restoreItemReal = async ({ id }) =>
+  aItem(await request(`${API_BASE.files}/files/restaurar${qs({ ruta: id })}`, { method: 'POST' }));
+
+function aShare(c) {
+  return {
+    id: c.correo,
+    principalId: c.correo,
+    role: c.permiso === 'escritura' ? 'editor' : 'viewer',
+    principal: { id: c.correo, type: 'user', name: c.correo, email: c.correo },
+  };
+}
+
+async function getItemDetailsReal({ id }) {
+  const [perm, versiones] = await Promise.all([
+    request(`${API_BASE.files}/files/permisos${qs({ ruta: id })}`),
+    request(`${API_BASE.files}/files/versiones${qs({ ruta: id })}`).catch(() => []),
+  ]);
+  const p = perm.permisos || {};
+  return {
+    id,
+    name: id.slice(id.lastIndexOf('/') + 1),
+    owner: perm.propietario,
+    group: perm.grupo || '',
+    mode: p.octal || '640',
+    ownerPrincipal: { id: perm.propietario, type: 'user', name: perm.propietario, email: perm.propietario },
+    groupPrincipal: perm.grupo ? { id: perm.grupo, type: 'group', name: perm.grupo } : null,
+    effectivePermission: {
+      read: !!p.propietario?.lectura, write: !!p.propietario?.escritura, execute: !!p.propietario?.ejecucion,
+    },
+    shares: (perm.compartidoCon || []).map(aShare),
+    versions: (versiones || []).map((v) => ({
+      id: String(v.version),
+      label: `Versión ${v.version}`,
+      date: fechaLegible(v.fecha),
+      sizeMeta: tamanoLegible(v.tamanoBytes),
+      modifiedBy: v.autor,
+    })),
+  };
+}
+
+const updatePermissionsReal = async ({ id, mode, group }) => {
+  const m = String(mode || '640').padStart(3, '0');
+  return aItem(await request(`${API_BASE.files}/files/permisos${qs({
+    ruta: id, owner: m[0], group: m[1], others: m[2], grupo: group,
+  })}`, { method: 'PUT' }));
+};
+
+const listSharesReal = async ({ id }) =>
+  ((await request(`${API_BASE.files}/files/permisos${qs({ ruta: id })}`)).compartidoCon || []).map(aShare);
+
+const addShareReal = async ({ id, principalId, role }) => {
+  await request(`${API_BASE.files}/files/compartir${qs({
+    ruta: id, correo: principalId, permiso: role === 'editor' ? 'escritura' : 'lectura', accion: 'grant',
+  })}`, { method: 'POST' });
+  return listSharesReal({ id });
+};
+
+const removeShareReal = async ({ id, shareId }) => {
+  await request(`${API_BASE.files}/files/compartir${qs({ ruta: id, correo: shareId, accion: 'revoke' })}`,
+    { method: 'POST' });
+  return null;
+};
+
+// El Shared File Server comparte por ACL de usuario, no con enlaces que caducan.
+// El Álbum de fotos sí publica enlaces externos; para archivos aún no existe.
+const listExternalLinksReal = async () => [];
+const createExternalLinkReal = async () => {
+  throw new Error('Los enlaces externos con caducidad aún no están disponibles para archivos');
+};
+const revokeExternalLinkReal = async () => null;
 
 // ---------- Exportes: misma firma sin importar el modo ----------
 
@@ -226,6 +390,7 @@ export const createFile = USE_MOCKS ? createFileMock : createFileReal;
 export const renameItem = USE_MOCKS ? renameItemMock : renameItemReal;
 export const toggleStar = USE_MOCKS ? toggleStarMock : toggleStarReal;
 export const deleteItem = USE_MOCKS ? deleteItemMock : deleteItemReal;
+export const restoreItem = USE_MOCKS ? (async (x) => x) : restoreItemReal;
 export const getItemDetails = USE_MOCKS ? getItemDetailsMock : getItemDetailsReal;
 export const updatePermissions = USE_MOCKS ? updatePermissionsMock : updatePermissionsReal;
 export const listShares = USE_MOCKS ? listSharesMock : listSharesReal;

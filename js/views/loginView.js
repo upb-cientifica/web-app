@@ -101,6 +101,15 @@ function renderCredentials(root, error) {
     try {
       const result = await login({ username, password });
       pendingUsername = username;
+      // El sistema autentica con token: si el login ya devolvió la sesión, se
+      // entra directo. El paso de verificación sigue disponible para cuando el
+      // directorio active el segundo factor.
+      if (result.token) {
+        startSession(result);
+        step = 'credentials';
+        navigate(consumePendingPath() || '/archivos');
+        return;
+      }
       pendingChallengeId = result.challengeId;
       step = 'totp';
       renderTotp(root, null);

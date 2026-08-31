@@ -4,6 +4,7 @@
 
 import { appStore } from './state.js';
 import { refreshToken as apiRefreshToken, logout as apiLogout } from './api/users.js';
+import { setAuthToken } from './api/client.js';
 
 let token = null;
 let refreshTimer = null;
@@ -15,6 +16,7 @@ function scheduleRefresh(expiresInSeconds) {
     try {
       const next = await apiRefreshToken();
       token = next.token;
+      setAuthToken(token);
       scheduleRefresh(next.expiresInSeconds);
     } catch (err) {
       console.error('No se pudo refrescar la sesión', err);
@@ -33,12 +35,14 @@ export function getToken() {
 
 export function startSession({ token: t, expiresInSeconds, user }) {
   token = t;
+  setAuthToken(t);
   appStore.setState({ user });
   scheduleRefresh(expiresInSeconds);
 }
 
 export function clearSession() {
   token = null;
+  setAuthToken(null);
   clearTimeout(refreshTimer);
   refreshTimer = null;
   appStore.setState({ user: null });
