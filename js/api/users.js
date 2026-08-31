@@ -114,7 +114,9 @@ function aUsuario(d) {
     role: d.rol === 'admin' ? 'admin' : 'user',
     quotaUsedGB: Math.round(((Number(d.usoBytes) || 0) / GB) * 100) / 100,
     quotaTotalGB: Math.round(((Number(d.cuotaBytes) || 0) / GB) * 100) / 100,
-    servicios: d.servicios ? String(d.servicios).split(',').map((x) => x.trim()).filter(Boolean) : [],
+    // El bus devuelve un arreglo cuando hay varios servicios y un valor suelto
+    // cuando hay uno solo, que es como lo expresa el XML.
+    servicios: Array.isArray(d.servicios) ? d.servicios : (d.servicios ? [d.servicios] : []),
   };
 }
 
@@ -133,7 +135,8 @@ async function loginReal({ username, password }) {
     mfaRequired: false,
     token: d.accessToken,
     expiresInSeconds: Number(d.expiraEn) || 900,
-    user: aUsuario(d),
+    // La respuesta anida los datos del usuario bajo `usuario`.
+    user: aUsuario(d.usuario || d),
   };
 }
 
@@ -150,7 +153,10 @@ async function refreshTokenReal() {
   return { token: d.accessToken, expiresInSeconds: Number(d.expiraEn) || 900 };
 }
 
-const getCurrentUserReal = async () => aUsuario(await request(`${API_BASE.users}/miPerfil`, { method: 'POST' }));
+const getCurrentUserReal = async () => {
+  const d = await request(`${API_BASE.users}/miPerfil`, { method: 'POST' });
+  return aUsuario(d.usuario || d);
+};
 
 async function logoutReal() {
   try {
@@ -168,8 +174,8 @@ async function enrollMfaReal() {
 
 /** Directorio de usuarios para el selector de compartición. */
 async function listPrincipalsReal({ search = '' } = {}) {
-  const d = await request(`${API_BASE.users}/listarUsuarios${qs({ q: search })}`, { method: 'POST' });
-  const filas = Array.isArray(d) ? d : (d?.usuarios || []);
+  const d = await request(`${API_BASE.users}/listarUsuarios${qs({ q: search, tamano: 100 })}`, { method: 'POST' });
+  const filas = Array.isArray(d?.items) ? d.items : (d?.items ? [d.items] : []);
   return filas.map((u) => ({
     id: u.correo || u.id,
     type: 'user',

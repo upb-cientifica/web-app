@@ -1,8 +1,8 @@
 // API de administración: usuarios, mapa de servicios, bitácora de auditoría.
 // Solo accesible con rol 'admin' (guarda de ruta en js/main.js).
 
-import { USE_MOCKS, API_BASE } from '../config.js';
-import { request } from './client.js';
+import { USE_MOCKS, API_BASE, BUS_URL } from '../config.js';
+import { request, qs } from './client.js';
 import { delay, genId, clone } from './mock/helpers.js';
 import { principals } from './mock/data.js';
 import { userMeta, services, auditLog } from './mock/adminData.js';
@@ -76,14 +76,107 @@ async function listAuditLogMock({ userId = 'all', action = 'all', dateFrom = '',
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
 }
 
-// ---------- Modo real (backend HTTP aún no disponible) ----------
+// ---------- Modo real: contra el Service Bus → Servicio de Usuarios ----------
+//
+// Todas estas operaciones son SOAP: el bus arma el sobre y devuelve JSON, así
+// que aquí solo se adapta la forma. Requieren rol admin, que el propio servicio
+// comprueba.
 
-const listUsersReal = () => request(`${API_BASE.users}/admin/users`);
-const createUserReal = (payload) => request(`${API_BASE.users}/admin/users`, { method: 'POST', body: payload });
-const setUserStatusReal = ({ id, status }) => request(`${API_BASE.users}/admin/users/${id}/status`, { method: 'PATCH', body: { status } });
-const updateUserQuotaReal = ({ id, quotaGB }) => request(`${API_BASE.users}/admin/users/${id}/quota`, { method: 'PATCH', body: { quotaGB } });
-const listServicesReal = () => request(`${API_BASE.metrics}/services/map`);
-const listAuditLogReal = (params = {}) => request(`${API_BASE.users}/admin/audit?${new URLSearchParams(params).toString()}`);
+const GB = 1024 ** 3;
+
+function comoLista(v) {
+  if (!v) return [];
+  return Array.isArray(v) ? v : [v];
+}
+
+/** Usuario del directorio → el que dibuja la interfaz. */
+function aUsuario(u) {
+  return {
+    id: u.id,
+    name: u.nombre,
+    email: u.correo,
+    role: u.rol,
+    status: u.estado,
+    group: u.grupo || null,
+    quotaGB: Math.round(((Number(u.cuotaBytes) || 0) / GB) * 100) / 100,
+    usedGB: Math.round(((Number(u.usoBytes) || 0) / GB) * 100) / 100,
+    services: comoLista(u.servicios),
+    createdAt: u.creadoEn,
+  };
+}
+
+const listUsersReal = async () => {
+  const d = await request(`${API_BASE.users}/listarUsuarios${qs({ tamano: 100 })}`, { method: 'POST' });
+  return comoLista(d?.items).map(aUsuario);
+};
+
+const createUserReal = async ({ name, email, password, role = 'investigador' } = {}) => {
+  const d = await request(`${API_BASE.users}/crearUsuario${qs({
+    nombre: name, correo: email, password, rol: role,
+  })}`, { method: 'POST' });
+  return aUsuario(d);
+};
+
+const setUserStatusReal = async ({ id, status }) => {
+  const d = await request(`${API_BASE.users}/actualizarUsuario${qs({ id, estado: status })}`,
+    { method: 'POST' });
+  return aUsuario(d);
+};
+
+const updateUserQuotaReal = async ({ id, quotaGB }) => {
+  const d = await request(`${API_BASE.users}/actualizarUsuario${qs({
+    id, cuotaBytes: Math.round(quotaGB * GB),
+  })}`, { method: 'POST' });
+  return aUsuario(d);
+};
+
+/**
+ * Mapa de servicios. Se arma con las tres fuentes que lo describen:
+ * el catálogo del directorio (qué servicios existen y cómo se llaman), el
+ * registro del bus (dónde vive cada uno y con qué protocolo se le habla) y el
+ * Monitoreo (si responde). Es el mismo catálogo que gobierna el claim del JWT.
+ */
+const normaliza = (s) => String(s || '').toLowerCase().replace(/[-_\s]/g, '');
+
+const listServicesReal = async () => {
+  const [cat, registro, estado] = await Promise.all([
+    request(`${API_BASE.users}/listarCatalogos`, { method: 'POST' }),
+    request(`${BUS_URL}/registro`).catch(() => []),
+    request(`${API_BASE.metrics}/servicios`).catch(() => []),
+  ]);
+
+  // Los nombres difieren entre fuentes (file_sync / file-sync): se comparan
+  // sin guiones ni mayúsculas.
+  const enBus = new Map((registro || []).map((r) => [normaliza(r.codigo), r]));
+  const vivos = new Map((estado || []).map((s) => [normaliza(s.nombre), s]));
+
+  return comoLista(cat?.servicios).map((s) => {
+    const k = normaliza(s.codigo);
+    const r = enBus.get(k);
+    const v = vivos.get(k);
+    return {
+      code: s.codigo,
+      name: s.nombre,
+      url: r ? r.endpoint : '—',
+      protocol: r ? r.protocolo : '—',
+      status: v ? (v.estado === 'disponible' ? 'up' : 'down') : (r ? 'sin sondear' : 'no registrado'),
+      latencyMs: v?.latenciaMs ?? null,
+    };
+  });
+};
+
+/** Auditoría: las sesiones abiertas, que es la bitácora que lleva el directorio. */
+const listAuditLogReal = async () => {
+  const d = await request(`${API_BASE.users}/listarSesiones`, { method: 'POST' });
+  return comoLista(d?.items ?? d?.sesiones).map((s) => ({
+    id: s.id,
+    user: s.correo || s.usuario,
+    action: 'sesión iniciada',
+    detail: s.dispositivo || s.ip || '',
+    timestamp: s.creadoEn || s.iniciadaEn,
+    status: s.revocada === 'true' ? 'revocada' : 'activa',
+  }));
+};
 
 export const listUsers = USE_MOCKS ? listUsersMock : listUsersReal;
 export const createUser = USE_MOCKS ? createUserMock : createUserReal;
