@@ -283,8 +283,14 @@ async function getQuickAccessReal() {
 async function getStorageUsageReal() {
   const d = await request(`${API_BASE.files}/home`);
   return {
+    // En GB para la barra de la barra lateral, que es lo que dibuja.
     used: Math.round(((d.usadoBytes || 0) / GB) * 100) / 100,
     total: Math.round(((d.cuotaBytes || 0) / GB) * 100) / 100,
+    // Y en bytes, porque redondear a dos decimales de GB convierte en "0"
+    // cualquier Home de menos de 10 MB: quien muestre una cifra exacta debe
+    // partir de aquí.
+    usedBytes: d.usadoBytes || 0,
+    totalBytes: d.cuotaBytes || 0,
   };
 }
 

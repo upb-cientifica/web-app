@@ -89,6 +89,14 @@ function comoLista(v) {
   return Array.isArray(v) ? v : [v];
 }
 
+// El directorio nombra el estado en español y la interfaz en inglés. Traducir
+// en los dos sentidos es trabajo de esta capa: sin ello, la vista comparaba
+// `estado === 'active'` -contra "activo"- y nunca acertaba, así que todas las
+// cuentas se dibujaban como dadas de baja y el botón guardaba "inactive", que
+// no es ninguno de los dos valores que el directorio entiende.
+const ESTADO_A_UI = { activo: 'active', inactivo: 'inactive' };
+const UI_A_ESTADO = { active: 'activo', inactive: 'inactivo' };
+
 /** Usuario del directorio → el que dibuja la interfaz. */
 function aUsuario(u) {
   return {
@@ -96,7 +104,7 @@ function aUsuario(u) {
     name: u.nombre,
     email: u.correo,
     role: u.rol,
-    status: u.estado,
+    status: ESTADO_A_UI[u.estado] || u.estado,
     group: u.grupo || null,
     quotaGB: Math.round(((Number(u.cuotaBytes) || 0) / GB) * 100) / 100,
     usedGB: Math.round(((Number(u.usoBytes) || 0) / GB) * 100) / 100,
@@ -118,8 +126,9 @@ const createUserReal = async ({ name, email, password, role = 'investigador' } =
 };
 
 const setUserStatusReal = async ({ id, status }) => {
-  const d = await request(`${API_BASE.users}/actualizarUsuario${qs({ id, estado: status })}`,
-    { method: 'POST' });
+  const d = await request(`${API_BASE.users}/actualizarUsuario${qs({
+    id, estado: UI_A_ESTADO[status] || status,
+  })}`, { method: 'POST' });
   return aUsuario(d);
 };
 

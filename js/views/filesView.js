@@ -4,6 +4,7 @@
 // (no se reinicia al desmontar), igual que el `state` global del prototipo.
 
 import { $, $$, esc } from '../utils/dom.js';
+import { formatBytes } from '../utils/format.js';
 import { debounce } from '../utils/debounce.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal, initModalBackdropDismiss } from '../components/modal.js';
@@ -580,8 +581,15 @@ function renderStorageBar() {
   const bar = $('.storage-bar');
   const text = $('.storage-text');
   if (!bar || !viewState.storageCache) return;
-  const { used, total } = viewState.storageCache;
-  const pct = Math.min(100, (used / total) * 100);
+  const { used, total, usedBytes, totalBytes } = viewState.storageCache;
+  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
   bar.style.width = pct.toFixed(2) + '%';
-  if (text) text.textContent = `${used} GB de ${(total / 1024).toFixed(2)} TB`;
+  // La etiqueta sale de los bytes y no de los GB redondeados: un Home de
+  // 150 B decía "0 GB de 0.01 TB", que no informa de nada. formatBytes elige
+  // la unidad que corresponda a cada lado.
+  if (text) {
+    text.textContent = usedBytes === undefined
+      ? `${used} GB de ${total} GB`
+      : `${formatBytes(usedBytes)} de ${formatBytes(totalBytes)}`;
+  }
 }
