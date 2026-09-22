@@ -120,14 +120,40 @@ function aUsuario(d) {
   };
 }
 
-// Guardado sólo en memoria, igual que el de acceso: una recarga cierra sesión.
+// El token de acceso vive solo en memoria (15 minutos). El de refresco sí se
+// guarda, para que recargar la página no obligue a entrar de nuevo: dura 7
+// días, es lo único que se puede almacenar y se borra al cerrar sesión. El
+// servidor lo rota en cada uso, así que un token robado que ya se usó no sirve.
+const CLAVE_REFRESCO = 'upb.refreshToken';
 let refreshTokenActual = null;
+
+function recordarRefresco(t) {
+  refreshTokenActual = t || null;
+  try {
+    if (t) localStorage.setItem(CLAVE_REFRESCO, t);
+    else localStorage.removeItem(CLAVE_REFRESCO);
+  } catch { /* almacenamiento bloqueado: la sesión seguirá siendo en memoria */ }
+}
+
+/** Borra el refresco guardado (cerrar sesión, o refresco que ya no sirve). */
+export function olvidarSesionGuardada() {
+  recordarRefresco(null);
+}
+
+/** ¿Quedó una sesión de antes que se pueda reanudar? */
+export function haySesionGuardada() {
+  if (USE_MOCKS) return false;
+  try {
+    refreshTokenActual = refreshTokenActual || localStorage.getItem(CLAVE_REFRESCO);
+  } catch { /* sin almacenamiento */ }
+  return !!refreshTokenActual;
+}
 
 async function loginReal({ username, password }) {
   const d = await request(`${API_BASE.users}/login${qs({ correo: aCorreo(username), password })}`,
     { method: 'POST' });
   if (!d?.accessToken) throw new Error('El servicio de usuarios no devolvió un token');
-  refreshTokenActual = d.refreshToken || null;
+  recordarRefresco(d.refreshToken);
   setAuthToken(d.accessToken);
   // El sistema autentica con token (no con segundo factor): la sesión queda
   // lista aquí mismo y la vista se salta el paso de verificación.
@@ -145,10 +171,11 @@ async function verifyTotpReal() {
 }
 
 async function refreshTokenReal() {
+  if (!refreshTokenActual) haySesionGuardada();
   if (!refreshTokenActual) throw new Error('No hay token de refresco');
   const d = await request(`${API_BASE.users}/renovarToken${qs({ refreshToken: refreshTokenActual })}`,
     { method: 'POST' });
-  if (d?.refreshToken) refreshTokenActual = d.refreshToken;
+  if (d?.refreshToken) recordarRefresco(d.refreshToken);
   setAuthToken(d.accessToken);
   return { token: d.accessToken, expiresInSeconds: Number(d.expiraEn) || 900 };
 }
@@ -162,7 +189,7 @@ async function logoutReal() {
   try {
     await request(`${API_BASE.users}/cerrarSesion`, { method: 'POST' });
   } finally {
-    refreshTokenActual = null;
+    recordarRefresco(null);
     setAuthToken(null);
   }
   return null;
