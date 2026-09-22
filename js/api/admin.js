@@ -118,25 +118,56 @@ const listUsersReal = async () => {
   return comoLista(d?.items).map(aUsuario);
 };
 
-const createUserReal = async ({ name, email, password, role = 'investigador' } = {}) => {
+// El WSDL agrupa los campos del usuario dentro de <datos>; el bus arma ese
+// anidamiento a partir del prefijo "datos." del parámetro. Sin él, el servicio
+// recibía la operación sin datos y respondía "El correo no tiene un formato
+// válido", porque el correo que veía estaba vacío.
+const createUserReal = async ({
+  name, email, password, role = 'investigador', groupId = null, quotaGB = 1, services = [],
+} = {}) => {
   const d = await request(`${API_BASE.users}/crearUsuario${qs({
-    nombre: name, correo: email, password, rol: role,
+    // En el orden del esquema (DatosUsuario), que es como lo espera el WSDL.
+    'datos.correo': email,
+    'datos.nombre': name,
+    'datos.contrasena': password,
+    'datos.rol': role,
+    'datos.grupoId': groupId || '',
+    'datos.cuotaBytes': Math.round((Number(quotaGB) || 0) * GB),
+    'datos.servicios': services.join(','),
   })}`, { method: 'POST' });
-  return aUsuario(d);
+  return aUsuario(d?.usuario ?? d);
 };
 
 const setUserStatusReal = async ({ id, status }) => {
   const d = await request(`${API_BASE.users}/actualizarUsuario${qs({
-    id, estado: UI_A_ESTADO[status] || status,
+    id, 'datos.estado': UI_A_ESTADO[status] || status,
   })}`, { method: 'POST' });
-  return aUsuario(d);
+  return aUsuario(d?.usuario ?? d);
 };
 
 const updateUserQuotaReal = async ({ id, quotaGB }) => {
   const d = await request(`${API_BASE.users}/actualizarUsuario${qs({
-    id, cuotaBytes: Math.round(quotaGB * GB),
+    id, 'datos.cuotaBytes': Math.round(quotaGB * GB),
   })}`, { method: 'POST' });
-  return aUsuario(d);
+  return aUsuario(d?.usuario ?? d);
+};
+
+/** Roles, grupos de investigación y servicios que ofrece el directorio. */
+const listCatalogsReal = async () => {
+  const c = await request(`${API_BASE.users}/listarCatalogos`, { method: 'POST' });
+  return {
+    roles: comoLista(c?.roles).map((r) => ({ code: r.codigo, name: r.nombre })),
+    groups: comoLista(c?.grupos).map((g) => ({ id: String(g.id), name: g.nombre })),
+    services: comoLista(c?.servicios).map((s) => ({ code: s.codigo, name: s.nombre })),
+  };
+};
+
+const listCatalogsMock = async () => {
+  await delay();
+  return {
+    roles: [{ code: 'investigador', name: 'Investigador' }, { code: 'admin', name: 'Administrador' }],
+    groups: [], services: [],
+  };
 };
 
 /**
@@ -193,3 +224,4 @@ export const setUserStatus = USE_MOCKS ? setUserStatusMock : setUserStatusReal;
 export const updateUserQuota = USE_MOCKS ? updateUserQuotaMock : updateUserQuotaReal;
 export const listServices = USE_MOCKS ? listServicesMock : listServicesReal;
 export const listAuditLog = USE_MOCKS ? listAuditLogMock : listAuditLogReal;
+export const listCatalogs = USE_MOCKS ? listCatalogsMock : listCatalogsReal;
