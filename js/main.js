@@ -17,7 +17,7 @@ import * as videosView from './views/videosView.js';
 import * as syncView from './views/syncView.js';
 import * as adminView from './views/adminView.js';
 import { initAvatarMenu } from './components/avatarMenu.js';
-import { isAuthenticated } from './session.js';
+import { isAuthenticated, restoreSession } from './session.js';
 import { appStore } from './state.js';
 
 /* ---------- Botones de cerrar/confirmar de los modales estáticos ---------- */
@@ -28,8 +28,7 @@ function initStaticModalButtons() {
   const uploadConfirm = $('#upload-confirm-btn');
   if (uploadConfirm) {
     uploadConfirm.addEventListener('click', () => {
-      showToast('Demo: archivo cargado', 'success');
-      closeModal('modal-upload');
+      $('#dropzone input[type="file"]')?.click();
     });
   }
 }
@@ -131,11 +130,15 @@ function initAdminNavVisibility() {
 /* ---------- Rutas ---------- */
 function registerRoutes() {
   registerRoute('/login', loginView.mount, { public: true });
-  registerRoute('/mfa-enroll', mfaEnrollView.mount, { public: true });
-  registerRoute('/archivos', filesView.mount);
+  registerRoute('/configurar-mfa', mfaEnrollView.mount, { public: true });
+  // Drive: una sola vista para todas sus secciones; entre ellas solo se actualiza.
+  registerRoute('/archivos/*', filesView.mount, { update: filesView.update });
+  for (const [seccion, ruta] of Object.entries(filesView.SECTION_PATHS)) {
+    if (seccion !== 'my-drive') registerRoute(ruta, filesView.mount, { update: filesView.update, datos: { seccion } });
+  }
   registerRoute('/fotos', photosView.mount);
   registerRoute('/videos', videosView.mount);
-  registerRoute('/sync', syncView.mount);
+  registerRoute('/sincronizacion', syncView.mount);
   registerRoute('/trabajos', jobsView.mount);
   registerRoute('/monitoreo', monitoringView.mount);
   registerRoute('/admin', adminView.mount, { roles: ['admin'] });
@@ -145,7 +148,7 @@ function registerRoutes() {
   }));
 }
 
-function init() {
+async function init() {
   registerRoutes();
   setAuthGuard(isAuthenticated);
   setRoleGuard((roles) => {
@@ -161,7 +164,11 @@ function init() {
   initResponsiveSidebar();
   initGlobalKeyboard();
   initAvatarMenu();
+  filesView.initUploadDropzone();
   initAdminNavVisibility();
+  // Antes del enrutador: si había sesión guardada, la ruta pedida se monta
+  // directamente en vez de pasar por el login.
+  await restoreSession();
   initRouter();
 }
 

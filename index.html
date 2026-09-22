@@ -2,9 +2,11 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <!-- Rutas reales (/archivos/Tesis): sin esto, css/ y js/ se buscarían bajo /archivos/. -->
+  <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Drive Upb</title>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: http://localhost:8099 http://127.0.0.1:8099; font-src 'self'; connect-src 'self' http://localhost:8099 http://127.0.0.1:8099; media-src 'self' blob: http://localhost:8099 http://127.0.0.1:8099; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: http://localhost:8099 http://127.0.0.1:8099; font-src 'self'; connect-src 'self' http://localhost:8099 http://127.0.0.1:8099; media-src 'self' blob: http://localhost:8099 http://127.0.0.1:8099; worker-src 'self' blob:; object-src 'none'; frame-src blob:; base-uri 'self'; frame-ancestors 'self'">
   <!-- Direccion del Service Bus. Al desplegar en el CCA, cambia esta linea
        (y el connect-src de arriba) por la IP de la VM del bus. -->
   <meta name="bus-url" content="http://localhost:8099/bus">
@@ -87,7 +89,7 @@
 
       <!-- Secciones tipo Drive: sub-estado de la vista Archivos -->
       <nav class="nav">
-        <button class="nav-item active" data-section="my-drive">
+        <button class="nav-item" data-section="my-drive">
           <span class="material-icons">drive_file_move</span>
           <span>Mi unidad</span>
         </button>
@@ -121,7 +123,7 @@
           <span class="material-icons">movie</span>
           <span>Videos</span>
         </button>
-        <button class="nav-item" data-route="/sync">
+        <button class="nav-item" data-route="/sincronizacion">
           <span class="material-icons">sync</span>
           <span>Sincronización</span>
         </button>
@@ -174,7 +176,7 @@
           Seleccionar archivo del equipo
           <input type="file" multiple hidden>
         </label>
-        <p class="dropzone-note">Concepto demostrativo: la subida real no se realiza.</p>
+        <p class="dropzone-note">Los archivos se guardan en tu Home, dentro de tu cuota.</p>
       </div>
       <div class="modal-foot">
         <button class="btn-text" data-close-modal="modal-upload">Cancelar</button>

@@ -1,4 +1,4 @@
-// Vista "Archivos" (#/archivos): explorador de Drive Upb.
+// Vista "Archivos" (/archivos, /archivos/<carpeta>, /papelera…): explorador de Drive Upb.
 // Migrado del prototipo original app.js, ahora sobre la capa js/api/files.js
 // y el enrutador. El estado de esta vista persiste durante toda la sesión
 // (no se reinicia al desmontar), igual que el `state` global del prototipo.
@@ -14,10 +14,11 @@ import { openPreview } from '../components/previewModal.js';
 import { openShareModal } from '../components/shareModal.js';
 import { openDetailsPanel, closeDetailsPanel } from '../components/detailsPanel.js';
 import { showConfirm, showPrompt } from '../components/dialogs.js';
-import { navigate, getCurrentPath } from '../router.js';
+import { navigate, rutaDe } from '../router.js';
+import { USE_MOCKS } from '../config.js';
 import {
   listItems, getQuickAccess, getStorageUsage,
-  createFolder, renameItem, toggleStar, deleteItem,
+  createFolder, renameItem, toggleStar, deleteItem, uploadFile,
 } from '../api/files.js';
 
 const SECTION_TITLES = {
@@ -26,6 +27,17 @@ const SECTION_TITLES = {
   'computer': 'Computadora',
   'starred':  'Destacados',
   'trash':    'Papelera',
+};
+
+// Cada sección tiene su propia URL; las carpetas de Mi unidad cuelgan de
+// /archivos con su ruta del Home (/archivos/Tesis/datos). Así la URL basta para
+// volver al mismo lugar: se puede recargar, copiar o usar atrás/adelante.
+export const SECTION_PATHS = {
+  'my-drive': '/archivos',
+  'shared':   '/compartidos',
+  'computer': '/computadora',
+  'starred':  '/destacados',
+  'trash':    '/papelera',
 };
 
 const TYPE_META = {
@@ -277,39 +289,56 @@ function buildPathFromCache(folderId) {
   return path;
 }
 
-async function openFolder(folder) {
-  if (!folder) return;
-  viewState.currentFolderId = folder.id;
-  viewState.pathStack = [...buildPathFromCache(folder.parentId), folder];
-  viewState.selectedId = null;
-  updateBreadcrumb();
-  await loadAndRenderItems();
-  showToast('Abriendo: ' + folder.name);
+/** URL de una carpeta de Mi unidad (null = la raíz). */
+function rutaCarpeta(folderId) {
+  return rutaDe(SECTION_PATHS['my-drive'], folderId || '');
 }
 
-async function goToRoot() {
-  viewState.currentFolderId = null;
-  viewState.pathStack = [];
-  viewState.selectedId = null;
-  const title = $('#section-title', mountedRoot);
-  if (title) title.textContent = SECTION_TITLES[viewState.section] || 'Mi unidad';
-  updateBreadcrumb();
-  await loadAndRenderItems();
-}
-
-async function goToFolder(folderId) {
-  if (!folderId) { await goToRoot(); return; }
-  const folder = viewState.pathStack.find((f) => f.id === folderId) || findFolderById(folderId);
-  if (folder) await openFolder(folder);
-}
-
-async function goUpOneLevel() {
-  if (viewState.pathStack.length <= 1) {
-    await goToRoot();
-  } else {
-    const parent = viewState.pathStack[viewState.pathStack.length - 2];
-    await goToFolder(parent.id);
+/**
+ * Migas de una carpeta. En modo real el id es la ruta del Home, así que las
+ * migas salen de ella sin preguntar a nadie; con mocks se reconstruyen con lo
+ * que ya está cargado.
+ */
+function pilaDe(folderId) {
+  if (folderId.startsWith('/')) {
+    const partes = folderId.split('/').filter(Boolean);
+    return partes.map((nombre, i) => ({ id: '/' + partes.slice(0, i + 1).join('/'), name: nombre }));
   }
+  const i = viewState.pathStack.findIndex((f) => f.id === folderId);
+  if (i >= 0) return viewState.pathStack.slice(0, i + 1);
+  const f = findFolderById(folderId);
+  return f ? [...buildPathFromCache(f.parentId), f] : [{ id: folderId, name: folderId }];
+}
+
+/** Traduce la URL al estado de la vista. params: { seccion, resto }. */
+function aplicarRuta({ seccion = 'my-drive', resto = '' } = {}) {
+  viewState.section = seccion;
+  viewState.selectedId = null;
+  const folderId = seccion === 'my-drive' && resto ? (USE_MOCKS ? resto : '/' + resto) : null;
+  viewState.currentFolderId = folderId;
+  viewState.pathStack = folderId ? pilaDe(folderId) : [];
+}
+
+/** El router avisa aquí cuando cambia la URL sin salir de esta vista. */
+export async function update(params) {
+  aplicarRuta(params);
+  if (!mountedRoot) return;
+  updateSectionNavUI(viewState.section);
+  updateBreadcrumb();
+  await loadAndRenderItems();
+}
+
+function openFolder(folder) {
+  if (folder) navigate(rutaCarpeta(folder.id));
+}
+
+function goToFolder(folderId) {
+  navigate(folderId ? rutaCarpeta(folderId) : SECTION_PATHS['my-drive']);
+}
+
+function goUpOneLevel() {
+  const padre = viewState.pathStack[viewState.pathStack.length - 2];
+  goToFolder(padre ? padre.id : null);
 }
 
 function updateBreadcrumb() {
@@ -463,14 +492,96 @@ async function handleContextAction(act, item) {
 
 /* ---------- Modal de subida ---------- */
 
-let dropzoneCleanup = null;
-function initUploadModal() {
+// El diálogo de subida vive en index.html y el botón "Nuevo" está en la barra
+// lateral, visible desde cualquier sección. Por eso se conecta UNA vez para
+// toda la aplicación, y no al montar esta vista: antes, abrirlo desde Fotos o
+// Videos no hacía nada, porque el manejador sólo existía dentro de Mi unidad.
+let dropzoneListo = false;
+export function initUploadDropzone() {
   const dz = $('#dropzone');
-  if (dz) {
-    dropzoneCleanup = initDropzone(dz, {
-      onFilesSelected: (fileList) => showToast(fileList.length + ' archivo(s) preparado(s) (demo)'),
-    });
+  if (!dz || dropzoneListo) return;
+  initDropzone(dz, { onFilesSelected: subirArchivos });
+  dropzoneListo = true;
+}
+
+/** Tras una subida: refresca lo que se ve, o lleva a Mi unidad si se subió desde otra sección. */
+async function trasSubir() {
+  viewState.storageCache = await getStorageUsage().catch(() => viewState.storageCache);
+  renderStorageBar();
+  if (mountedRoot) await loadAndRenderItems();
+  else navigate(rutaCarpeta(viewState.currentFolderId));
+}
+
+/** Une una carpeta del Home con un nombre: "/" + "a" = "/a", "/x" + "a" = "/x/a". */
+function unirRuta(base, nombre) {
+  return `${!base || base === '/' ? '' : base}/${nombre}`;
+}
+
+/**
+ * Sube archivos a la carpeta abierta, uno detrás de otro. En serie y no en
+ * paralelo: con un solo núcleo en el servidor, varias subidas a la vez sólo se
+ * estorban, y así cada error —cuota llena, nombre repetido— se reporta sobre
+ * el archivo que lo causó.
+ */
+async function subirArchivos(archivos, { destino = viewState.currentFolderId || '/' } = {}) {
+  closeModal('modal-upload');
+  const input = $('#dropzone input[type="file"]');
+  if (input) input.value = '';   // para poder volver a elegir el mismo archivo
+
+  let subidos = 0;
+  for (const archivo of archivos) {
+    const carpeta = archivo.destino || destino;
+    showToast(`Subiendo ${archivo.name}…`);
+    try {
+      await uploadFile({ file: archivo, parentId: carpeta });
+      subidos += 1;
+    } catch (err) {
+      showToast(`${archivo.name}: ${err.message || 'no se pudo subir'}`, 'error');
+    }
   }
+  if (subidos) {
+    showToast(subidos === 1 ? 'Archivo subido' : `${subidos} archivos subidos`, 'success');
+    await trasSubir();
+  }
+}
+
+/**
+ * Sube una carpeta completa respetando su estructura. El navegador entrega los
+ * archivos con su ruta relativa ("proyecto/datos/a.csv"); las carpetas se crean
+ * primero, de la más externa a la más interna, porque el servidor exige que el
+ * padre exista.
+ */
+function subirCarpeta() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.webkitdirectory = true;
+  input.addEventListener('change', async () => {
+    const archivos = Array.from(input.files || []);
+    if (!archivos.length) return;
+    const base = viewState.currentFolderId || '/';
+    const creadas = new Set();
+    for (const archivo of archivos) {
+      const partes = (archivo.webkitRelativePath || archivo.name).split('/').slice(0, -1);
+      let actual = base;
+      for (const parte of partes) {
+        const siguiente = unirRuta(actual, parte);
+        if (!creadas.has(siguiente)) {
+          try {
+            await createFolder({ name: parte, parentId: actual });
+          } catch (err) {
+            // Si ya existía, se sigue: lo que importa es que esté.
+            if (!/existe/i.test(err.message || '')) throw err;
+          }
+          creadas.add(siguiente);
+        }
+        actual = siguiente;
+      }
+      archivo.destino = actual;
+    }
+    await subirArchivos(archivos);
+  });
+  input.click();
 }
 
 /* ---------- Menú "Nuevo" (invocado desde main.js) ---------- */
@@ -481,15 +592,14 @@ export async function handleNewAction(action) {
       openModal('modal-upload');
       break;
     case 'upload-folder-carp':
-      openModal('modal-upload');
-      showToast('Carpeta lista para subir (demo)');
+      subirCarpeta();
       break;
     case 'create-folder': {
       const name = await showPrompt('Nombre de la nueva carpeta:', 'Carpeta sin título');
       if (name && name.trim()) {
         await createFolder({ name: name.trim(), parentId: viewState.currentFolderId });
-        if (getCurrentPath() !== '/archivos') { navigate('/archivos'); }
-        else { await loadAndRenderItems(); }
+        if (mountedRoot) await loadAndRenderItems();
+        else navigate(rutaCarpeta(viewState.currentFolderId));
         showToast('Carpeta creada', 'success');
       }
       break;
@@ -502,17 +612,7 @@ export async function handleNewAction(action) {
 /* ---------- Navegación de secciones del sidebar (invocado desde main.js) ---------- */
 
 export function goToSection(section) {
-  viewState.section = section;
-  viewState.currentFolderId = null;
-  viewState.pathStack = [];
-  viewState.selectedId = null;
-  updateSectionNavUI(section);
-  if (getCurrentPath() === '/archivos' && mountedRoot) {
-    updateBreadcrumb();
-    loadAndRenderItems();
-  } else {
-    navigate('/archivos');
-  }
+  navigate(SECTION_PATHS[section] || SECTION_PATHS['my-drive']);
 }
 
 function updateSectionNavUI(section) {
@@ -542,14 +642,14 @@ function initKeyboard() {
 
 /* ---------- Ciclo de vida de la vista (llamado por el router) ---------- */
 
-export async function mount(root) {
+export async function mount(root, params) {
+  aplicarRuta(params);
   root.innerHTML = TEMPLATE;
   mountedRoot = root;
 
   updateSectionNavUI(viewState.section);
   initModalBackdropDismiss();
   initControls();
-  initUploadModal();
   ctxMenu = createContextMenu('context-menu', (act) => {
     const item = viewState.selectedId ? findItem(viewState.selectedId) : null;
     handleContextAction(act, item);
@@ -565,15 +665,15 @@ export async function mount(root) {
   await loadAndRenderItems();
 
   return function unmount() {
-    if (dropzoneCleanup) dropzoneCleanup();
     if (ctxMenu) ctxMenu.destroy();
     if (unbindSearch) unbindSearch();
     if (unbindKeyboard) unbindKeyboard();
     closeDetailsPanel();
     closeModal('modal-share');
+    // Fuera de Drive ninguna de sus secciones queda marcada en el menú.
+    $$('.nav-item[data-section]').forEach((n) => n.classList.remove('active'));
     mountedRoot = null;
     ctxMenu = null;
-    dropzoneCleanup = null;
   };
 }
 

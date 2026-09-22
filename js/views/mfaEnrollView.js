@@ -1,6 +1,6 @@
 import { $, esc } from '../utils/dom.js';
 import { enrollMfa } from '../api/users.js';
-import { qrcode } from '../vendor/qrcode.mjs';
+import { qrcode } from '../vendor/qrcode.js';
 
 function loadingTemplate() {
   return `
@@ -17,7 +17,7 @@ function errorTemplate(message) {
     <div class="auth-screen">
       <div class="auth-card">
         <p class="auth-error" role="alert">${esc(message)}</p>
-        <a class="btn-text auth-submit" href="#/login">Volver a iniciar sesión</a>
+        <a class="btn-text auth-submit" href="/login">Volver a iniciar sesión</a>
       </div>
     </div>
   `;
@@ -51,7 +51,7 @@ function contentTemplate({ secret, otpauthUrl, backupCodes }) {
           ${backupCodes.map((c) => `<li><code>${esc(c)}</code></li>`).join('')}
         </ul>
 
-        <a class="btn-primary auth-submit" href="#/login">Ya configuré mi app, iniciar sesión</a>
+        <a class="btn-primary auth-submit" href="/login">Ya configuré mi app, iniciar sesión</a>
       </div>
     </div>
   `;

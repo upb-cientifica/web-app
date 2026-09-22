@@ -30,7 +30,7 @@ function credentialsTemplate(error) {
 
       <button class="btn-primary auth-submit" type="submit" id="login-submit">Continuar</button>
 
-      <a class="auth-link" href="#/mfa-enroll">¿No tienes configurada la autenticación en dos pasos?</a>
+      <a class="auth-link" href="/configurar-mfa">¿No tienes configurada la autenticación en dos pasos?</a>
     </form>
   `;
 }
