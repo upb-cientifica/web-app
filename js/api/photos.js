@@ -98,3 +98,18 @@ export const listCollections = USE_MOCKS ? listCollectionsMock : listCollections
 export const listTags = USE_MOCKS ? listTagsMock : listTagsReal;
 export const listPhotos = USE_MOCKS ? listPhotosMock : listPhotosReal;
 export const getPhoto = USE_MOCKS ? getPhotoMock : getPhotoReal;
+
+// Álbum donde caen las imágenes que se suben desde Mi unidad.
+const ALBUM_MI_UNIDAD = 'Mi unidad';
+
+/** Registra en Fotos una imagen que ya está en el Home (el servicio la lee por RMI). */
+export async function agregarAFotos({ homeRuta, titulo }) {
+  if (USE_MOCKS) return null;
+  const albums = await request(`${API_BASE.photos}/albums`) || [];
+  let album = albums.find((a) => a.titulo === ALBUM_MI_UNIDAD && a.miRol === 'propietario');
+  if (!album) {
+    album = await request(`${API_BASE.photos}/albums${qs({ titulo: ALBUM_MI_UNIDAD })}`, { method: 'POST' });
+  }
+  return request(`${API_BASE.photos}/albums/${encodeURIComponent(album.id)}/imagenes${qs({ homeRuta, titulo })}`,
+    { method: 'POST', retries: 0 });
+}

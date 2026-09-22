@@ -36,13 +36,17 @@ export async function request(path, { method = 'GET', body, headers = {}, retrie
   while (attempt <= retries) {
     try {
       const cabeceras = { ...headers };
-      if (body !== undefined) cabeceras['Content-Type'] = 'application/json';
+      // Un archivo viaja como sus propios bytes; cualquier otra cosa, como JSON.
+      const binario = body instanceof Blob || body instanceof ArrayBuffer || ArrayBuffer.isView(body);
+      if (body !== undefined) {
+        cabeceras['Content-Type'] ??= binario ? (body.type || 'application/octet-stream') : 'application/json';
+      }
       if (authToken) cabeceras.Authorization = `Bearer ${authToken}`;
 
       const res = await fetch(path, {
         method,
         headers: cabeceras,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
+        body: body === undefined ? undefined : (binario ? body : JSON.stringify(body)),
         signal,
       });
 
@@ -67,6 +71,23 @@ export async function request(path, { method = 'GET', body, headers = {}, retrie
   }
 
   throw lastError instanceof ApiError ? lastError : new ApiError(lastError.message, { cause: lastError });
+}
+
+/**
+ * Descarga binaria (vista previa, descargas). A diferencia de request(), la
+ * respuesta buena no es JSON sino los bytes del archivo; solo el error lo es.
+ */
+export async function requestBlob(path, { signal } = {}) {
+  const res = await fetch(path, {
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    signal,
+  });
+  if (!res.ok) {
+    let err = null;
+    try { err = (await res.json())?.error; } catch { /* sin cuerpo JSON */ }
+    throw new ApiError(err?.mensaje || `Error ${res.status} en ${path}`, { status: res.status, codigo: err?.codigo || '' });
+  }
+  return res.blob();
 }
 
 /** Construye una cadena de consulta descartando los valores vacíos. */

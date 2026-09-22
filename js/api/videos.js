@@ -89,3 +89,12 @@ const getVideoReal = async ({ id }) => {
 
 export const listVideos = USE_MOCKS ? listVideosMock : listVideosReal;
 export const getVideo = USE_MOCKS ? getVideoMock : getVideoReal;
+
+/**
+ * Publica en Streaming un video que ya está en el Home: el servicio lo trae
+ * por RMI y lo empaqueta en HLS con ffmpeg antes de responder.
+ */
+export async function importarVideo({ ruta, titulo }) {
+  if (USE_MOCKS) return null;
+  return request(`${API_BASE.videos}/videos/importar${qs({ ruta, titulo })}`, { method: 'POST', retries: 0 });
+}

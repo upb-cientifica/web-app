@@ -2,7 +2,9 @@
 // Misma firma en modo mock y modo real; el interruptor está en js/config.js.
 
 import { USE_MOCKS, API_BASE } from '../config.js';
-import { request, qs } from './client.js';
+import { request, requestBlob, qs } from './client.js';
+import { agregarAFotos } from './photos.js';
+import { importarVideo } from './videos.js';
 import { delay, genId, clone } from './mock/helpers.js';
 import { folders, files, quickAccess, STORAGE, principals, shares, externalLinks } from './mock/data.js';
 import { modeToTriads } from '../utils/permissions.js';
@@ -57,6 +59,10 @@ async function createFolderMock({ name, parentId = null }) {
   };
   folders.unshift(folder);
   return clone(folder);
+}
+
+async function uploadFileMock({ file, parentId = null }) {
+  return createFileMock({ name: file.name, parentId, meta: `${Math.max(1, Math.round(file.size / 1024))} KB` });
 }
 
 async function createFileMock({ name, parentId = null, type = 'doc', meta = '—' }) {
@@ -303,6 +309,34 @@ const createFileReal = async ({ name, parentId }) =>
   aItem(await request(`${API_BASE.files}/files/upload${qs({ ruta: parentId || '/', nombre: name })}`,
     { method: 'POST', body: { creadoPor: 'web' } }));
 
+/**
+ * Sube un archivo del equipo al Home. El Shared File Server recibe los bytes
+ * tal cual en el cuerpo y toma la carpeta y el nombre de la consulta; el bus
+ * los reenvía sin tocarlos. Sin reintento: repetir un archivo grande a ciegas
+ * por un fallo de red duplicaría el tráfico sin avisar.
+ */
+const uploadFileReal = async ({ file, parentId }) => {
+  const item = aItem(await request(`${API_BASE.files}/files/upload${qs({ ruta: parentId || '/', nombre: file.name })}`,
+    { method: 'POST', body: file, retries: 0 }));
+  // Una imagen subida a Mi unidad también debe verse en Fotos. El Álbum la
+  // toma del Home por RMI (no se vuelve a subir desde el navegador); si eso
+  // falla, el archivo ya quedó guardado y solo se avisa en consola.
+  if (item.type === 'image') {
+    await agregarAFotos({ homeRuta: item.id, titulo: item.name })
+      .catch((e) => console.warn('No se pudo añadir a Fotos:', e.message));
+  } else if (item.type === 'video') {
+    // Igual con los videos: quedan publicados en Streaming (HLS).
+    await importarVideo({ ruta: item.id, titulo: item.name.replace(/\.[^.]+$/, '') })
+      .catch((e) => console.warn('No se pudo publicar en Videos:', e.message));
+  }
+  return item;
+};
+
+/** Bytes de un archivo del Home, para la vista previa. */
+async function downloadBlobReal({ id, owner }) {
+  return requestBlob(`${API_BASE.files}/files/download${qs({ ruta: id, propietario: owner })}`);
+}
+
 const renameItemReal = async ({ id, name }) =>
   aItem(await request(`${API_BASE.files}/files${qs({ ruta: id, nuevoNombre: name })}`, { method: 'PATCH' }));
 
@@ -393,6 +427,8 @@ export const getQuickAccess = USE_MOCKS ? getQuickAccessMock : getQuickAccessRea
 export const getStorageUsage = USE_MOCKS ? getStorageUsageMock : getStorageUsageReal;
 export const createFolder = USE_MOCKS ? createFolderMock : createFolderReal;
 export const createFile = USE_MOCKS ? createFileMock : createFileReal;
+export const uploadFile = USE_MOCKS ? uploadFileMock : uploadFileReal;
+export const downloadBlob = USE_MOCKS ? async () => null : downloadBlobReal;
 export const renameItem = USE_MOCKS ? renameItemMock : renameItemReal;
 export const toggleStar = USE_MOCKS ? toggleStarMock : toggleStarReal;
 export const deleteItem = USE_MOCKS ? deleteItemMock : deleteItemReal;
