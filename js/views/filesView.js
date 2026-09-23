@@ -121,8 +121,17 @@ const listHeaderHTML = () => viewState.view === 'list' ? `
     <span>Propietario</span>
     <span>Modificación</span>
     <span></span>
+    <span></span>
   </div>
 ` : '';
+
+// Botón de acciones (⋮): abre el mismo menú que el clic derecho, que en un
+// portátil sin ratón o en una pantalla táctil no hay forma de descubrir.
+const moreBtnHTML = (item) => `
+  <button type="button" class="icon-btn item-more" data-act="more"
+          aria-label="Acciones de ${esc(item.name)}" title="Más acciones">
+    <span class="material-icons">more_vert</span>
+  </button>`;
 
 const thumbHTML = (item) => {
   const m = TYPE_META[item.type] || TYPE_META.doc;
@@ -148,13 +157,17 @@ const itemRowHTML = (item, kind) => viewState.view === 'list' ? `
     <div class="item-meta">${esc(item.meta)}</div>
     <div class="item-date">${esc(item.date)}</div>
     <div class="item-thumb">${item.starred ? '<span class="material-icons star-badge">star</span>' : ''}</div>
+    <div class="item-thumb">${moreBtnHTML(item)}</div>
   </div>
 ` : `
   <div class="grid-card" data-id="${item.id}" data-kind="${kind}" data-name="${esc(item.name)}" data-starred="${item.starred}" tabindex="0" role="button" aria-label="${esc(item.name)}">
     <div class="grid-thumb">${thumbHTML(item)}</div>
     <div class="grid-meta">
-      <span class="item-name">${esc(item.name)}</span>
-      <span class="item-date">${esc(item.date)}</span>
+      <div class="grid-meta-text">
+        <span class="item-name">${esc(item.name)}</span>
+        <span class="item-date">${esc(item.date)}</span>
+      </div>
+      ${moreBtnHTML(item)}
     </div>
   </div>
 `;
@@ -225,6 +238,15 @@ function bindItems(container) {
       el.classList.add('selected');
       viewState.selectedId = el.dataset.id;
       openItem(el);
+    });
+    el.querySelector('[data-act="more"]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      viewState.selectedId = el.dataset.id;
+      $$('.item-row, .grid-card', mountedRoot).forEach((n) => n.classList.remove('selected'));
+      el.classList.add('selected');
+      // El menú se abre pegado al botón, hacia abajo y a la izquierda.
+      const r = e.currentTarget.getBoundingClientRect();
+      ctxMenu && ctxMenu.show(r.right - 200, r.bottom + 4);
     });
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
