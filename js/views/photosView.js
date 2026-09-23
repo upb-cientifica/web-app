@@ -54,8 +54,14 @@ function initLazyLoading(grid) {
       const photo = currentPhotos.find((p) => p.id === id);
       if (!photo) return;
       const img = card.querySelector('.photo-thumb');
-      img.src = photoDataUri(photo.id, photo.name);
+      // Con backend real llega la miniatura del servicio; el marcador de
+      // posición generado queda como respaldo si la imagen no carga.
+      const respaldo = photoDataUri(photo.id, photo.name);
+      // Las dos escuchas van antes de asignar src: una imagen ya cacheada
+      // dispara 'load' de inmediato y se perdería el aviso.
       img.addEventListener('load', () => card.classList.add('loaded'), { once: true });
+      img.addEventListener('error', () => { img.src = respaldo; }, { once: true });
+      img.src = photo.thumbnailUrl || photo.url || respaldo;
       observer.unobserve(card);
     });
   }, { root: null, rootMargin: '150px', threshold: 0.01 });

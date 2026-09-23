@@ -48,7 +48,7 @@ js/
   main.js                 Arranque: registra rutas, guardas de sesión/rol, chrome de la app
   router.js                Enrutador por hash con rutas públicas/protegidas y por rol
   state.js                 Store genérico con suscriptores (createStore) + appStore global
-  session.js                Sesión en memoria (token, refresco silencioso) — nunca en localStorage
+  session.js                Sesión (token en memoria, refresco guardado 7 días)
   config.js                 USE_MOCKS y API_BASE por servicio
 
   api/                     Capa de datos. Ningún componente de vista llama fetch() directo.
@@ -99,6 +99,6 @@ Resumen rápido (ver el contrato completo con parámetros y forma de respuesta e
 ## Notas de arquitectura
 
 - **Router por hash** (`js/router.js`): rutas públicas (`/login`, `/mfa-enroll`, sin chrome de la app) vs. protegidas (exigen sesión) vs. con rol (`/admin`, exige `role: 'admin'`). Las guardas se registran desde `js/main.js`.
-- **Sesión en memoria** (`js/session.js`): el token nunca se persiste; una recarga de página cierra la sesión. Incluye refresco silencioso antes de expirar.
+- **Sesión** (`js/session.js`): el token de acceso (15 min) vive solo en memoria y se refresca en silencio antes de expirar. Entre recargas se guarda únicamente el token de refresco, que dura 7 días y el servidor rota en cada uso; al arrancar se canjea por uno de acceso nuevo. Cerrar sesión lo borra.
 - **Reproductor de video**: intenta `hls.js` (vendorizado) contra un manifiesto real; si falla (porque el backend aún no lo publica), cae automáticamente a un reproductor nativo con un clip de prueba generado 100% en el cliente (Canvas + MediaRecorder), sin ningún archivo de video real ni servicio externo.
 - **Seguridad de cliente**: `Content-Security-Policy` estricta en `index.html` (sin scripts/estilos inline, sin `eval`), todo el HTML dinámico pasa por `esc()` antes de insertarse, no hay `alert`/`prompt`/`confirm` nativos (se reemplazaron por `js/components/dialogs.js`), y los modales tienen `role="dialog"` + trampa de foco (`js/utils/focusTrap.js`).

@@ -26,7 +26,9 @@ function render() {
   if (!photo || !overlay) return;
 
   const img = overlay.querySelector('.viewer-image');
-  img.src = photoDataUri(photo.id, photo.name);
+  const respaldo = photoDataUri(photo.id, photo.name);
+  img.addEventListener('error', () => { img.src = respaldo; }, { once: true });
+  img.src = photo.url || respaldo;
   img.classList.toggle('zoomed', zoomed);
 
   overlay.querySelector('.viewer-title').textContent = photo.name;

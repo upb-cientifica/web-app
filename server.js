@@ -48,9 +48,16 @@ const server = http.createServer(async (req, res) => {
     try {
       stat = await fs.stat(filePath);
     } catch {
-      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('404 - No encontrado');
-      return;
+      // Rutas de la aplicación (/archivos/Tesis, /fotos…): no son archivos,
+      // las resuelve el enrutador del navegador. Lo que sí tiene extensión y
+      // no existe es un 404 de verdad.
+      if (path.extname(req.url.split('?')[0])) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('404 - No encontrado');
+        return;
+      }
+      filePath = path.join(ROOT, 'index.html');
+      stat = await fs.stat(filePath);
     }
 
     if (stat.isDirectory()) filePath = path.join(filePath, 'index.html');

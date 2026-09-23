@@ -1,8 +1,8 @@
 // API de usuarios y sesión, contra el servicio SOAP de PHP (vía gateway REST).
 // Andamiaje de la fase 1: se conecta a la UI de autenticación en la fase 2.1.
 
-import { USE_MOCKS, API_BASE } from '../config.js';
-import { request } from './client.js';
+import { USE_MOCKS, API_BASE, DOMINIO_CORREO } from '../config.js';
+import { request, qs, setAuthToken } from './client.js';
 import { delay, clone } from './mock/helpers.js';
 import { principals } from './mock/data.js';
 
@@ -91,13 +91,125 @@ async function listPrincipalsMock({ search = '' } = {}) {
   return clone(items);
 }
 
-const loginReal = (payload) => request(`${API_BASE.users}/login`, { method: 'POST', body: payload });
-const verifyTotpReal = (payload) => request(`${API_BASE.users}/mfa/verify`, { method: 'POST', body: payload });
-const refreshTokenReal = () => request(`${API_BASE.users}/token/refresh`, { method: 'POST' });
-const getCurrentUserReal = () => request(`${API_BASE.users}/me`);
-const logoutReal = () => request(`${API_BASE.users}/logout`, { method: 'POST' });
-const enrollMfaReal = () => request(`${API_BASE.users}/mfa/enroll`, { method: 'POST' });
-const listPrincipalsReal = ({ search = '' } = {}) => request(`${API_BASE.users}/principals?q=${encodeURIComponent(search)}`);
+// ---------- Modo real: contra el Service Bus ----------
+//
+// El bus expone el Servicio de Usuarios (SOAP/PHP) como REST: arma el sobre
+// SOAP y traduce la respuesta XML a JSON. Aquí sólo se adapta esa respuesta a
+// la forma que consume la interfaz.
+
+/** El usuario puede escribir "ana.torres" o el correo completo. */
+function aCorreo(username) {
+  const u = (username || '').trim();
+  return u.includes('@') ? u : `${u}@${DOMINIO_CORREO}`;
+}
+
+const GB = 1024 ** 3;
+
+/** Traduce el usuario que devuelve el Servicio de Usuarios al de la interfaz. */
+function aUsuario(d) {
+  return {
+    id: d.id || '',
+    name: d.nombre || d.correo || '',
+    email: d.correo || '',
+    role: d.rol === 'admin' ? 'admin' : 'user',
+    quotaUsedGB: Math.round(((Number(d.usoBytes) || 0) / GB) * 100) / 100,
+    quotaTotalGB: Math.round(((Number(d.cuotaBytes) || 0) / GB) * 100) / 100,
+    // El bus devuelve un arreglo cuando hay varios servicios y un valor suelto
+    // cuando hay uno solo, que es como lo expresa el XML.
+    servicios: Array.isArray(d.servicios) ? d.servicios : (d.servicios ? [d.servicios] : []),
+  };
+}
+
+// El token de acceso vive solo en memoria (15 minutos). El de refresco sí se
+// guarda, para que recargar la página no obligue a entrar de nuevo: dura 7
+// días, es lo único que se puede almacenar y se borra al cerrar sesión. El
+// servidor lo rota en cada uso, así que un token robado que ya se usó no sirve.
+const CLAVE_REFRESCO = 'upb.refreshToken';
+let refreshTokenActual = null;
+
+function recordarRefresco(t) {
+  refreshTokenActual = t || null;
+  try {
+    if (t) localStorage.setItem(CLAVE_REFRESCO, t);
+    else localStorage.removeItem(CLAVE_REFRESCO);
+  } catch { /* almacenamiento bloqueado: la sesión seguirá siendo en memoria */ }
+}
+
+/** Borra el refresco guardado (cerrar sesión, o refresco que ya no sirve). */
+export function olvidarSesionGuardada() {
+  recordarRefresco(null);
+}
+
+/** ¿Quedó una sesión de antes que se pueda reanudar? */
+export function haySesionGuardada() {
+  if (USE_MOCKS) return false;
+  try {
+    refreshTokenActual = refreshTokenActual || localStorage.getItem(CLAVE_REFRESCO);
+  } catch { /* sin almacenamiento */ }
+  return !!refreshTokenActual;
+}
+
+async function loginReal({ username, password }) {
+  const d = await request(`${API_BASE.users}/login${qs({ correo: aCorreo(username), password })}`,
+    { method: 'POST' });
+  if (!d?.accessToken) throw new Error('El servicio de usuarios no devolvió un token');
+  recordarRefresco(d.refreshToken);
+  setAuthToken(d.accessToken);
+  // El sistema autentica con token (no con segundo factor): la sesión queda
+  // lista aquí mismo y la vista se salta el paso de verificación.
+  return {
+    mfaRequired: false,
+    token: d.accessToken,
+    expiresInSeconds: Number(d.expiraEn) || 900,
+    // La respuesta anida los datos del usuario bajo `usuario`.
+    user: aUsuario(d.usuario || d),
+  };
+}
+
+async function verifyTotpReal() {
+  throw new Error('El sistema autentica con token; no hay verificación en dos pasos');
+}
+
+async function refreshTokenReal() {
+  if (!refreshTokenActual) haySesionGuardada();
+  if (!refreshTokenActual) throw new Error('No hay token de refresco');
+  const d = await request(`${API_BASE.users}/renovarToken${qs({ refreshToken: refreshTokenActual })}`,
+    { method: 'POST' });
+  if (d?.refreshToken) recordarRefresco(d.refreshToken);
+  setAuthToken(d.accessToken);
+  return { token: d.accessToken, expiresInSeconds: Number(d.expiraEn) || 900 };
+}
+
+const getCurrentUserReal = async () => {
+  const d = await request(`${API_BASE.users}/miPerfil`, { method: 'POST' });
+  return aUsuario(d.usuario || d);
+};
+
+async function logoutReal() {
+  try {
+    await request(`${API_BASE.users}/cerrarSesion`, { method: 'POST' });
+  } finally {
+    recordarRefresco(null);
+    setAuthToken(null);
+  }
+  return null;
+}
+
+async function enrollMfaReal() {
+  throw new Error('El sistema autentica con token; no hay enrolamiento de segundo factor');
+}
+
+/** Directorio de usuarios para el selector de compartición. */
+async function listPrincipalsReal({ search = '' } = {}) {
+  const d = await request(`${API_BASE.users}/listarUsuarios${qs({ q: search, tamano: 100 })}`, { method: 'POST' });
+  const filas = Array.isArray(d?.items) ? d.items : (d?.items ? [d.items] : []);
+  return filas.map((u) => ({
+    id: u.correo || u.id,
+    type: 'user',
+    name: u.nombre || u.correo,
+    email: u.correo,
+  }));
+}
 
 export const login = USE_MOCKS ? loginMock : loginReal;
 export const verifyTotp = USE_MOCKS ? verifyTotpMock : verifyTotpReal;

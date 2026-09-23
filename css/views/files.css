@@ -1,6 +1,6 @@
 /* ============================================================
    Drive Upb — views/files.css
-   Estilos específicos de la vista "Archivos" (#/archivos):
+   Estilos específicos de la vista "Archivos" (/archivos):
    encabezado, migas de pan, acceso rápido, listas/cuadrículas,
    vista previa.
    ============================================================ */
@@ -120,7 +120,7 @@
 }
 .item-row {
   display: grid;
-  grid-template-columns: 44px 1fr 160px 140px 40px;
+  grid-template-columns: 44px 1fr 160px 140px 32px 40px;
   align-items: center;
   gap: 12px;
   height: 48px;
@@ -148,7 +148,7 @@
 /* Encabezado de columna para lista */
 .list-header {
   display: grid;
-  grid-template-columns: 44px 1fr 160px 140px 40px;
+  grid-template-columns: 44px 1fr 160px 140px 32px 40px;
   gap: 12px;
   padding: 8px 12px;
   color: var(--text-3);
@@ -191,7 +191,10 @@
 .grid-thumb .material-icons.doc    { color: #4a90e2; }
 .grid-thumb .material-icons.sheet  { color: #2e7d32; }
 .grid-thumb .material-icons.slides { color: #ef6c00; }
-.grid-meta { padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; }
+.grid-meta { padding: 10px 6px 10px 14px; display: flex; align-items: center; gap: 4px; }
+.grid-meta-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.item-more { width: 32px; height: 32px; }
+.item-more .material-icons { font-size: 20px; color: var(--text-2); }
 .grid-meta .item-name { font-size: 14px; }
 .grid-meta .item-date { font-size: 12px; }
 
@@ -214,8 +217,10 @@
   color: var(--text-2);
   font-size: 14px;
 }
-.preview-body img {
+.preview-body img,
+.preview-body video {
   max-width: 100%;
+  max-height: 70vh;
   border-radius: var(--radius-sm);
   display: block;
   margin: 0 auto;
@@ -226,10 +231,23 @@
   padding: 40px 0;
 }
 .preview-body .preview-placeholder .material-icons { font-size: 64px; color: var(--text-disabled); }
+.preview-body audio { width: 100%; }
+.preview-body .preview-pdf { width: 100%; height: 70vh; border: 0; border-radius: var(--radius-sm); }
+.preview-body .preview-text {
+  max-height: 70vh;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  background: var(--surface-2, rgba(127,127,127,.08));
+  border-radius: var(--radius-sm);
+  font: 12px/1.5 ui-monospace, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 /* Responsive: colapsar columnas de la lista en móvil */
 @media (max-width: 720px) {
-  .item-row, .list-header { grid-template-columns: 40px 1fr 40px; }
+  .item-row, .list-header { grid-template-columns: 40px 1fr 32px 40px; }
   .item-row .item-meta, .item-row .item-date, .list-header span:nth-child(3),
   .list-header span:nth-child(4) { display: none; }
 }

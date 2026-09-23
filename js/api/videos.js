@@ -1,7 +1,7 @@
 // API del catálogo de streaming de video.
 
 import { USE_MOCKS, API_BASE } from '../config.js';
-import { request } from './client.js';
+import { request, qs, getAuthToken } from './client.js';
 import { delay, clone } from './mock/helpers.js';
 import { videos } from './mock/videosData.js';
 import { CURRENT_USER_GROUPS } from '../utils/currentUser.js';
@@ -40,8 +40,61 @@ async function getVideoMock({ id }) {
   return clone({ ...withA, stream });
 }
 
-const listVideosReal = ({ sortBy } = {}) => request(`${API_BASE.videos}?sortBy=${sortBy || 'recent'}`);
-const getVideoReal = ({ id }) => request(`${API_BASE.videos}/${id}`);
+// ---------- Modo real: contra el Service Bus → Streaming ----------
+//
+// El manifiesto HLS se pide por el bus; sus segmentos van referenciados de
+// forma relativa, así que resuelven contra la misma URL y siguen pasando por
+// el bus sin tener que reescribirlos.
+
+const ORDEN = { recent: 'fecha', title: 'titulo', duration: 'duracion' };
+
+function conToken(url) {
+  const t = getAuthToken();
+  return t ? `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(t)}` : url;
+}
+
+/** Video del servicio → el que dibuja la interfaz. */
+function aVideo(v) {
+  return {
+    id: v.id,
+    title: v.titulo,
+    durationSeconds: v.duracionSeg || 0,
+    uploadedAt: v.publicadoEn,
+    requiredGroup: v.nivelAcceso === 'publico' ? null : (v.proyecto || v.nivelAcceso),
+    // El catálogo del servicio ya viene filtrado a lo que el usuario puede ver.
+    hasAccess: true,
+    author: v.autor,
+    project: v.proyecto,
+    sizeBytes: v.tamanoBytes,
+  };
+}
+
+const listVideosReal = async ({ sortBy } = {}) =>
+  (await request(`${API_BASE.videos}/videos${qs({ orden: ORDEN[sortBy] || 'fecha' })}`) || []).map(aVideo);
+
+const getVideoReal = async ({ id }) => {
+  const v = await request(`${API_BASE.videos}/videos/${encodeURIComponent(id)}`);
+  const base = aVideo(v);
+  if (!v.hlsListo) {
+    return { ...base, stream: null, notReady: true };
+  }
+  return {
+    ...base,
+    stream: {
+      type: 'hls',
+      manifestUrl: conToken(`${API_BASE.videos}/videos/${encodeURIComponent(id)}/index.m3u8`),
+    },
+  };
+};
 
 export const listVideos = USE_MOCKS ? listVideosMock : listVideosReal;
 export const getVideo = USE_MOCKS ? getVideoMock : getVideoReal;
+
+/**
+ * Publica en Streaming un video que ya está en el Home: el servicio lo trae
+ * por RMI y lo empaqueta en HLS con ffmpeg antes de responder.
+ */
+export async function importarVideo({ ruta, titulo }) {
+  if (USE_MOCKS) return null;
+  return request(`${API_BASE.videos}/videos/importar${qs({ ruta, titulo })}`, { method: 'POST', retries: 0 });
+}
