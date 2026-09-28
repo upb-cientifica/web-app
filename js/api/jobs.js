@@ -6,7 +6,7 @@
 // una función para cancelar la suscripción.
 
 import { USE_MOCKS, API_BASE } from '../config.js';
-import { request } from './client.js';
+import { request, qs } from './client.js';
 import { delay, genId, clone } from './mock/helpers.js';
 import { jobs, NODE_POOL } from './mock/jobsData.js';
 
@@ -153,23 +153,108 @@ function subscribeJobLogMock({ id, onLine }) {
   };
 }
 
-// ---------- Modo real (backend HTTP aún no disponible) ----------
+// ---------- Modo real: contra el Service Bus → clúster HPC (Java RMI) ----------
+//
+// El bus convierte estas llamadas REST en invocaciones sobre el objeto remoto
+// ClusterHpc. La interfaz no sabe que al otro lado hay RMI.
 
-const listJobsReal = ({ status } = {}) => request(`${API_BASE.jobs}?${status && status !== 'all' ? `status=${status}` : ''}`);
-const getJobReal = ({ id }) => request(`${API_BASE.jobs}/${id}`);
-const submitJobReal = (payload) => request(`${API_BASE.jobs}`, { method: 'POST', body: payload });
-const cancelJobReal = ({ id }) => request(`${API_BASE.jobs}/${id}/cancel`, { method: 'POST' });
+const ESTADOS = {
+  ENCOLADO: 'queued',
+  EJECUTANDO: 'running',
+  COMPLETADO: 'completed',
+  FALLIDO: 'failed',
+  CANCELADO: 'cancelled',
+};
 
-// En modo real, esto se implementaría con EventSource(`${API_BASE.jobs}/${id}/log/stream`).
-function subscribeJobLogReal({ id, onLine }) {
-  const source = new EventSource(`${API_BASE.jobs}/${id}/log/stream`);
-  const handler = (e) => onLine(e.data);
-  source.addEventListener('message', handler);
-  return () => source.close();
+/** TrabajoInfo del clúster → Job de la interfaz. */
+function aJob(t, log = []) {
+  return {
+    id: t.id,
+    name: t.nombre,
+    status: ESTADOS[t.estado] || 'queued',
+    processes: t.procesos,
+    nodes: 0,
+    timeLimitMinutes: 0,
+    envVars: [],
+    sourceFileName: t.comando || '',
+    datasetFileName: t.rutaHome || '',
+    submittedAt: t.creadoEn,
+    startedAt: t.estado === 'ENCOLADO' ? null : t.creadoEn,
+    // El clúster reporta la duración en segundos; la vista la deduce de las
+    // marcas de inicio y fin, así que se reconstruye el fin a partir de ella.
+    completedAt: ['COMPLETADO', 'FALLIDO', 'CANCELADO'].includes(t.estado) && t.creadoEn
+      ? new Date(new Date(t.creadoEn).getTime() + (t.duracionSeg || 0) * 1000).toISOString()
+      : null,
+    assignedNodes: [],
+    log,
+    // Extras del clúster que la interfaz puede aprovechar.
+    progress: t.progreso,
+    exitCode: t.codigoSalida,
+    message: t.mensaje,
+    durationSeconds: t.duracionSeg,
+    owner: t.propietario,
+  };
 }
+
+async function listJobsReal({ status } = {}) {
+  const ts = await request(`${API_BASE.jobs}/trabajos`);
+  const jobs = (ts || []).map((t) => aJob(t));
+  return !status || status === 'all' ? jobs : jobs.filter((j) => j.status === status);
+}
+
+const getJobReal = async ({ id }) => {
+  const [t, s] = await Promise.all([
+    request(`${API_BASE.jobs}/trabajos/${encodeURIComponent(id)}`),
+    request(`${API_BASE.jobs}/trabajos/${encodeURIComponent(id)}/salida`).catch(() => ({ salida: '' })),
+  ]);
+  return aJob(t, (s?.salida || '').split('\n').filter(Boolean));
+};
+
+/**
+ * El clúster recibe un ejecutable con sus argumentos, como espera `mpirun`, y
+ * la ruta del Home de donde traer el código y los datasets.
+ */
+async function submitJobReal({ name, processes = 1, sourceFileName, datasetFileName } = {}) {
+  if (!sourceFileName) throw new Error('Indica el programa a ejecutar');
+  const { id } = await request(`${API_BASE.jobs}/trabajos${qs({
+    nombre: name, comando: sourceFileName, procesos: processes, rutaHome: datasetFileName,
+  })}`, { method: 'POST' });
+  return getJobReal({ id });
+}
+
+const cancelJobReal = async ({ id }) => {
+  await request(`${API_BASE.jobs}/trabajos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  return getJobReal({ id });
+};
+
+/**
+ * El clúster no publica el log por SSE: se consulta su salida acumulada. Aquí
+ * se sondea y sólo se emiten las líneas nuevas, de modo que la vista recibe el
+ * mismo goteo que esperaba del EventSource.
+ */
+function subscribeJobLogReal({ id, onLine }) {
+  let vistas = 0;
+  let vivo = true;
+  const tick = async () => {
+    if (!vivo) return;
+    try {
+      const s = await request(`${API_BASE.jobs}/trabajos/${encodeURIComponent(id)}/salida`);
+      const lineas = (s?.salida || '').split('\n').filter(Boolean);
+      for (let i = vistas; i < lineas.length; i += 1) onLine(lineas[i]);
+      vistas = lineas.length;
+    } catch { /* el trabajo puede haber desaparecido */ }
+  };
+  tick();
+  const timer = setInterval(tick, 2000);
+  return () => { vivo = false; clearInterval(timer); };
+}
+
+/** Inventario de nodos del clúster, por RMI. */
+const listNodesReal = () => request(`${API_BASE.jobs}/nodos`);
 
 export const listJobs = USE_MOCKS ? listJobsMock : listJobsReal;
 export const getJob = USE_MOCKS ? getJobMock : getJobReal;
 export const submitJob = USE_MOCKS ? submitJobMock : submitJobReal;
 export const cancelJob = USE_MOCKS ? cancelJobMock : cancelJobReal;
 export const subscribeJobLog = USE_MOCKS ? subscribeJobLogMock : subscribeJobLogReal;
+export const listNodes = USE_MOCKS ? (async () => []) : listNodesReal;

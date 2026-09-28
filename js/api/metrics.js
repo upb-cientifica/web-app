@@ -4,7 +4,7 @@
 // que monitoreo y la consola MPI cuenten una historia coherente.
 
 import { USE_MOCKS, API_BASE } from '../config.js';
-import { request } from './client.js';
+import { request, qs } from './client.js';
 import { delay, genId, clone } from './mock/helpers.js';
 import { alertRules, series, SERIES_MAX_POINTS, seededRandom } from './mock/metricsData.js';
 import { jobs, NODE_POOL } from './mock/jobsData.js';
@@ -127,17 +127,130 @@ async function getHistoricalReportMock({ from, to }) {
   return report;
 }
 
-// ---------- Modo real (backend HTTP aún no disponible) ----------
+// ---------- Modo real: contra el Service Bus → Monitoreo y clúster ----------
+//
+// El resumen mezcla dos servicios que hablan protocolos distintos: las métricas
+// de máquina salen del Monitoreo por REST y los trabajos activos del clúster
+// por Java RMI. La vista no distingue: para ella todo llega igual del bus.
 
-const getSummaryReal = () => request(`${API_BASE.metrics}/summary`);
-const getSeriesReal = () => request(`${API_BASE.metrics}/series`);
-const getNodesReal = () => request(`${API_BASE.metrics}/nodes`);
-const getServiceStatusReal = () => request(`${API_BASE.metrics}/services`);
-const listAlertRulesReal = () => request(`${API_BASE.metrics}/alert-rules`);
-const createAlertRuleReal = (payload) => request(`${API_BASE.metrics}/alert-rules`, { method: 'POST', body: payload });
-const deleteAlertRuleReal = ({ id }) => request(`${API_BASE.metrics}/alert-rules/${id}`, { method: 'DELETE' });
-const getTriggeredAlertsReal = () => request(`${API_BASE.metrics}/alerts/triggered`);
-const getHistoricalReportReal = ({ from, to }) => request(`${API_BASE.metrics}/reports?from=${from}&to=${to}`);
+/** Estado de un servicio vigilado → el vocabulario de la interfaz. */
+function aEstado(e) {
+  if (e === 'disponible') return 'up';
+  if (e === 'caido') return 'down';
+  return 'degraded';
+}
+
+async function getSummaryReal() {
+  const [host, trabajos] = await Promise.all([
+    request(`${API_BASE.metrics}/host`),
+    request(`${API_BASE.jobs}/trabajos`).catch(() => []),
+  ]);
+  const activos = (trabajos || []).filter((t) => t.estado === 'EJECUTANDO' || t.estado === 'ENCOLADO').length;
+  return {
+    cpuPct: Math.max(0, Math.round(host.cpuPct)),
+    memPct: Math.max(0, Math.round(host.memoriaPct)),
+    storagePct: Math.max(0, Math.round(host.discoPct)),
+    activeJobs: activos,
+  };
+}
+
+// El Monitoreo guarda histórico de disponibilidad, no de CPU y memoria: la
+// serie para la gráfica en vivo se acumula aquí, con cada resumen que se pide.
+const serie = [];
+const MAX_SERIE = 60;
+
+async function getSeriesReal() {
+  try {
+    const s = await getSummaryReal();
+    serie.push({ t: Date.now(), cpuPct: s.cpuPct, memPct: s.memPct });
+    while (serie.length > MAX_SERIE) serie.shift();
+  } catch { /* si falla una lectura se conserva lo acumulado */ }
+  return [...serie];
+}
+
+/** Nodos del clúster: llegan del objeto remoto ClusterHpc por RMI. */
+async function getNodesReal() {
+  const ns = await request(`${API_BASE.jobs}/nodos`).catch(() => []);
+  const trabajos = await request(`${API_BASE.jobs}/trabajos`).catch(() => []);
+  const enCurso = (trabajos || []).filter((t) => t.estado === 'EJECUTANDO').map((t) => t.nombre);
+  return (ns || []).map((n) => ({
+    name: n.host,
+    status: n.disponible ? (enCurso.length ? 'ocupado' : 'disponible') : 'disponible',
+    cpuPct: 0,
+    memPct: 0,
+    jobs: n.disponible ? enCurso : [],
+    slots: n.slots,
+  }));
+}
+
+async function getServiceStatusReal() {
+  const ss = await request(`${API_BASE.metrics}/servicios`);
+  return (ss || []).map((s) => ({
+    name: s.nombre,
+    status: aEstado(s.estado),
+    latencyMs: s.latenciaMs,
+  }));
+}
+
+const METRICA_A_UI = { cpu: 'cpu', memoria: 'mem', disco: 'storage', latencia: 'latencia', disponibilidad: 'disponibilidad' };
+const METRICA_A_SERVICIO = { cpu: 'cpu', mem: 'memoria', storage: 'disco' };
+
+async function listAlertRulesReal() {
+  const d = await request(`${API_BASE.metrics}/alertas`);
+  return (d?.reglas || []).map((r) => ({
+    id: r.id,
+    metric: METRICA_A_UI[r.metrica] || r.metrica,
+    threshold: r.umbral,
+    channel: 'email',       // el Monitoreo notifica por su canal de eventos
+    severity: r.severidad,
+    firing: r.disparada,
+  }));
+}
+
+const createAlertRuleReal = async ({ metric, threshold }) => {
+  await request(`${API_BASE.metrics}/alertas${qs({
+    metrica: METRICA_A_SERVICIO[metric] || metric, operador: '>', umbral: threshold,
+  })}`, { method: 'POST' });
+  return listAlertRulesReal();
+};
+
+const deleteAlertRuleReal = ({ id }) =>
+  request(`${API_BASE.metrics}/alertas${qs({ id })}`, { method: 'DELETE' });
+
+async function getTriggeredAlertsReal() {
+  const d = await request(`${API_BASE.metrics}/alertas`);
+  return (d?.eventos || []).filter((e) => e.disparada).map((e) => ({
+    id: `${e.reglaId}-${e.instante}`,
+    metric: METRICA_A_UI[e.metrica] || e.metrica,
+    threshold: e.umbral,
+    channel: 'email',
+    value: e.valor,
+    triggeredAt: new Date(e.instante).toISOString(),
+    severity: e.severidad,
+    service: e.servicio || null,
+  }));
+}
+
+/**
+ * Reporte histórico. El Monitoreo lo guarda por servicio (disponibilidad y
+ * latencia media), no como promedios de CPU por día: se devuelve lo que
+ * realmente hay, que es lo que sostiene el informe del proyecto.
+ */
+async function getHistoricalReportReal({ from, to } = {}) {
+  const dias = (() => {
+    if (!from || !to) return 7;
+    const d = Math.ceil((new Date(to) - new Date(from)) / 86400000);
+    return Number.isFinite(d) && d > 0 ? d : 7;
+  })();
+  const d = await request(`${API_BASE.metrics}/reportes${qs({ dias })}`);
+  return (d?.servicios || []).map((s) => ({
+    date: `últimos ${d.dias} días`,
+    service: s.servicio,
+    availabilityPct: s.disponibilidadPct,
+    latencyAvgMs: s.latenciaMediaMs,
+    samples: s.muestras,
+  }));
+}
 
 export const getSummary = USE_MOCKS ? getSummaryMock : getSummaryReal;
 export const getSeries = USE_MOCKS ? getSeriesMock : getSeriesReal;

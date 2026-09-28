@@ -15,6 +15,7 @@ let hlsInstance = null;
 let currentVideo = null;
 let currentQuality = 'medium';
 let releaseFocus = null;
+let nivelesHls = [];   // calidades reales del manifiesto, si la fuente es HLS
 
 function onKeydown(e) {
   if (e.key === 'Escape') closeVideoPlayer();
@@ -55,6 +56,31 @@ function playerTemplate(video) {
   `;
 }
 
+/** Muestra u oculta el aviso de carga. */
+function cargando(visible) {
+  overlay?.querySelector('#video-loading')?.classList.toggle('hidden', !visible);
+}
+
+/**
+ * El aviso "Cargando…" lo gobierna el propio elemento <video>: se va en cuanto
+ * hay imagen y vuelve solo si el video se queda sin búfer. Antes lo quitaba
+ * únicamente el reproductor de respaldo, así que con HLS se quedaba encima
+ * del video toda la reproducción.
+ */
+function seguirCarga(videoEl) {
+  ['loadeddata', 'canplay', 'playing'].forEach((ev) => videoEl.addEventListener(ev, () => cargando(false)));
+  videoEl.addEventListener('waiting', () => cargando(true));
+  videoEl.addEventListener('error', () => cargando(false));
+}
+
+/** Rellena el selector de calidad con las del manifiesto (HLS) o las de prueba. */
+function llenarCalidades(opciones, valor) {
+  const sel = overlay?.querySelector('#video-quality');
+  if (!sel) return;
+  sel.innerHTML = opciones.map((o) => `<option value="${esc(String(o.value))}">${esc(o.label)}</option>`).join('');
+  sel.value = String(valor);
+}
+
 async function loadNativeQuality(quality, { preserveState = false } = {}) {
   const videoEl = overlay.querySelector('#video-el');
   const loading = overlay.querySelector('#video-loading');
@@ -82,10 +108,20 @@ async function loadNativeQuality(quality, { preserveState = false } = {}) {
 async function tryLoadHls(video) {
   const videoEl = overlay.querySelector('#video-el');
   try {
-    const { default: Hls } = await import('../vendor/hls.mjs');
+    const { default: Hls } = await import('../vendor/hls.js');
     if (!Hls.isSupported()) throw new Error('hls.js no soportado en este navegador');
 
     hlsInstance = new Hls();
+    hlsInstance.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+      // El servicio empaqueta una sola calidad por ahora; si algún día
+      // publica varias, aquí aparecen todas con su altura real.
+      nivelesHls = (data.levels || []).map((l, i) => ({
+        value: i, label: l.height ? `${l.height}p` : `Calidad ${i + 1}`,
+      }));
+      llenarCalidades([{ value: -1, label: 'Automática' }, ...nivelesHls], -1);
+      cargando(false);
+      videoEl.play().catch(() => {});   // el clic que abrió el reproductor ya es gesto del usuario
+    });
     hlsInstance.on(Hls.Events.ERROR, (event, data) => {
       if (!data.fatal) return;
       hlsInstance.destroy();
@@ -113,6 +149,7 @@ function bindControls() {
   const fullscreenBtn = overlay.querySelector('#video-fullscreen');
   const stage = overlay.querySelector('#video-stage');
 
+  seguirCarga(videoEl);
   qualitySelect.value = currentQuality;
 
   playBtn.addEventListener('click', () => {
@@ -144,6 +181,13 @@ function bindControls() {
   speedSelect.addEventListener('change', () => { videoEl.playbackRate = Number(speedSelect.value); });
 
   qualitySelect.addEventListener('change', async () => {
+    // Con HLS la calidad la cambia el propio reproductor, sin recargar nada.
+    if (hlsInstance) {
+      hlsInstance.currentLevel = Number(qualitySelect.value);
+      const n = nivelesHls.find((l) => l.value === Number(qualitySelect.value));
+      showToast(`Calidad: ${n ? n.label : 'automática'}`, '');
+      return;
+    }
     currentQuality = qualitySelect.value;
     if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
     await loadNativeQuality(currentQuality, { preserveState: true });

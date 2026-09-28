@@ -1,8 +1,8 @@
 // API de administración: usuarios, mapa de servicios, bitácora de auditoría.
 // Solo accesible con rol 'admin' (guarda de ruta en js/main.js).
 
-import { USE_MOCKS, API_BASE } from '../config.js';
-import { request } from './client.js';
+import { USE_MOCKS, API_BASE, BUS_URL } from '../config.js';
+import { request, qs } from './client.js';
 import { delay, genId, clone } from './mock/helpers.js';
 import { principals } from './mock/data.js';
 import { userMeta, services, auditLog } from './mock/adminData.js';
@@ -76,14 +76,147 @@ async function listAuditLogMock({ userId = 'all', action = 'all', dateFrom = '',
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
 }
 
-// ---------- Modo real (backend HTTP aún no disponible) ----------
+// ---------- Modo real: contra el Service Bus → Servicio de Usuarios ----------
+//
+// Todas estas operaciones son SOAP: el bus arma el sobre y devuelve JSON, así
+// que aquí solo se adapta la forma. Requieren rol admin, que el propio servicio
+// comprueba.
 
-const listUsersReal = () => request(`${API_BASE.users}/admin/users`);
-const createUserReal = (payload) => request(`${API_BASE.users}/admin/users`, { method: 'POST', body: payload });
-const setUserStatusReal = ({ id, status }) => request(`${API_BASE.users}/admin/users/${id}/status`, { method: 'PATCH', body: { status } });
-const updateUserQuotaReal = ({ id, quotaGB }) => request(`${API_BASE.users}/admin/users/${id}/quota`, { method: 'PATCH', body: { quotaGB } });
-const listServicesReal = () => request(`${API_BASE.metrics}/services/map`);
-const listAuditLogReal = (params = {}) => request(`${API_BASE.users}/admin/audit?${new URLSearchParams(params).toString()}`);
+const GB = 1024 ** 3;
+
+function comoLista(v) {
+  if (!v) return [];
+  return Array.isArray(v) ? v : [v];
+}
+
+// El directorio nombra el estado en español y la interfaz en inglés. Traducir
+// en los dos sentidos es trabajo de esta capa: sin ello, la vista comparaba
+// `estado === 'active'` -contra "activo"- y nunca acertaba, así que todas las
+// cuentas se dibujaban como dadas de baja y el botón guardaba "inactive", que
+// no es ninguno de los dos valores que el directorio entiende.
+const ESTADO_A_UI = { activo: 'active', inactivo: 'inactive' };
+const UI_A_ESTADO = { active: 'activo', inactive: 'inactivo' };
+
+/** Usuario del directorio → el que dibuja la interfaz. */
+function aUsuario(u) {
+  return {
+    id: u.id,
+    name: u.nombre,
+    email: u.correo,
+    role: u.rol,
+    status: ESTADO_A_UI[u.estado] || u.estado,
+    group: u.grupo || null,
+    quotaGB: Math.round(((Number(u.cuotaBytes) || 0) / GB) * 100) / 100,
+    usedGB: Math.round(((Number(u.usoBytes) || 0) / GB) * 100) / 100,
+    services: comoLista(u.servicios),
+    createdAt: u.creadoEn,
+  };
+}
+
+const listUsersReal = async () => {
+  const d = await request(`${API_BASE.users}/listarUsuarios${qs({ tamano: 100 })}`, { method: 'POST' });
+  return comoLista(d?.items).map(aUsuario);
+};
+
+// El WSDL agrupa los campos del usuario dentro de <datos>; el bus arma ese
+// anidamiento a partir del prefijo "datos." del parámetro. Sin él, el servicio
+// recibía la operación sin datos y respondía "El correo no tiene un formato
+// válido", porque el correo que veía estaba vacío.
+const createUserReal = async ({
+  name, email, password, role = 'investigador', groupId = null, quotaGB = 1, services = [],
+} = {}) => {
+  const d = await request(`${API_BASE.users}/crearUsuario${qs({
+    // En el orden del esquema (DatosUsuario), que es como lo espera el WSDL.
+    'datos.correo': email,
+    'datos.nombre': name,
+    'datos.contrasena': password,
+    'datos.rol': role,
+    'datos.grupoId': groupId || '',
+    'datos.cuotaBytes': Math.round((Number(quotaGB) || 0) * GB),
+    'datos.servicios': services.join(','),
+  })}`, { method: 'POST' });
+  return aUsuario(d?.usuario ?? d);
+};
+
+const setUserStatusReal = async ({ id, status }) => {
+  const d = await request(`${API_BASE.users}/actualizarUsuario${qs({
+    id, 'datos.estado': UI_A_ESTADO[status] || status,
+  })}`, { method: 'POST' });
+  return aUsuario(d?.usuario ?? d);
+};
+
+const updateUserQuotaReal = async ({ id, quotaGB }) => {
+  const d = await request(`${API_BASE.users}/actualizarUsuario${qs({
+    id, 'datos.cuotaBytes': Math.round(quotaGB * GB),
+  })}`, { method: 'POST' });
+  return aUsuario(d?.usuario ?? d);
+};
+
+/** Roles, grupos de investigación y servicios que ofrece el directorio. */
+const listCatalogsReal = async () => {
+  const c = await request(`${API_BASE.users}/listarCatalogos`, { method: 'POST' });
+  return {
+    roles: comoLista(c?.roles).map((r) => ({ code: r.codigo, name: r.nombre })),
+    groups: comoLista(c?.grupos).map((g) => ({ id: String(g.id), name: g.nombre })),
+    services: comoLista(c?.servicios).map((s) => ({ code: s.codigo, name: s.nombre })),
+  };
+};
+
+const listCatalogsMock = async () => {
+  await delay();
+  return {
+    roles: [{ code: 'investigador', name: 'Investigador' }, { code: 'admin', name: 'Administrador' }],
+    groups: [], services: [],
+  };
+};
+
+/**
+ * Mapa de servicios. Se arma con las tres fuentes que lo describen:
+ * el catálogo del directorio (qué servicios existen y cómo se llaman), el
+ * registro del bus (dónde vive cada uno y con qué protocolo se le habla) y el
+ * Monitoreo (si responde). Es el mismo catálogo que gobierna el claim del JWT.
+ */
+const normaliza = (s) => String(s || '').toLowerCase().replace(/[-_\s]/g, '');
+
+const listServicesReal = async () => {
+  const [cat, registro, estado] = await Promise.all([
+    request(`${API_BASE.users}/listarCatalogos`, { method: 'POST' }),
+    request(`${BUS_URL}/registro`).catch(() => []),
+    request(`${API_BASE.metrics}/servicios`).catch(() => []),
+  ]);
+
+  // Los nombres difieren entre fuentes (file_sync / file-sync): se comparan
+  // sin guiones ni mayúsculas.
+  const enBus = new Map((registro || []).map((r) => [normaliza(r.codigo), r]));
+  const vivos = new Map((estado || []).map((s) => [normaliza(s.nombre), s]));
+
+  return comoLista(cat?.servicios).map((s) => {
+    const k = normaliza(s.codigo);
+    const r = enBus.get(k);
+    const v = vivos.get(k);
+    return {
+      code: s.codigo,
+      name: s.nombre,
+      url: r ? r.endpoint : '—',
+      protocol: r ? r.protocolo : '—',
+      status: v ? (v.estado === 'disponible' ? 'up' : 'down') : (r ? 'sin sondear' : 'no registrado'),
+      latencyMs: v?.latenciaMs ?? null,
+    };
+  });
+};
+
+/** Auditoría: las sesiones abiertas, que es la bitácora que lleva el directorio. */
+const listAuditLogReal = async () => {
+  const d = await request(`${API_BASE.users}/listarSesiones`, { method: 'POST' });
+  return comoLista(d?.items ?? d?.sesiones).map((s) => ({
+    id: s.id,
+    user: s.correo || s.usuario,
+    action: 'sesión iniciada',
+    detail: s.dispositivo || s.ip || '',
+    timestamp: s.creadoEn || s.iniciadaEn,
+    status: s.revocada === 'true' ? 'revocada' : 'activa',
+  }));
+};
 
 export const listUsers = USE_MOCKS ? listUsersMock : listUsersReal;
 export const createUser = USE_MOCKS ? createUserMock : createUserReal;
@@ -91,3 +224,4 @@ export const setUserStatus = USE_MOCKS ? setUserStatusMock : setUserStatusReal;
 export const updateUserQuota = USE_MOCKS ? updateUserQuotaMock : updateUserQuotaReal;
 export const listServices = USE_MOCKS ? listServicesMock : listServicesReal;
 export const listAuditLog = USE_MOCKS ? listAuditLogMock : listAuditLogReal;
+export const listCatalogs = USE_MOCKS ? listCatalogsMock : listCatalogsReal;

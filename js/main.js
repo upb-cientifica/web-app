@@ -17,7 +17,8 @@ import * as videosView from './views/videosView.js';
 import * as syncView from './views/syncView.js';
 import * as adminView from './views/adminView.js';
 import { initAvatarMenu } from './components/avatarMenu.js';
-import { isAuthenticated } from './session.js';
+import { initMenusEncabezado } from './components/menusEncabezado.js';
+import { isAuthenticated, restoreSession } from './session.js';
 import { appStore } from './state.js';
 
 /* ---------- Botones de cerrar/confirmar de los modales estáticos ---------- */
@@ -28,8 +29,7 @@ function initStaticModalButtons() {
   const uploadConfirm = $('#upload-confirm-btn');
   if (uploadConfirm) {
     uploadConfirm.addEventListener('click', () => {
-      showToast('Demo: archivo cargado', 'success');
-      closeModal('modal-upload');
+      $('#dropzone input[type="file"]')?.click();
     });
   }
 }
@@ -91,10 +91,23 @@ function initModuleNav() {
 function initResponsiveSidebar() {
   const sidebar = $('.sidebar');
   const menuBtn = $('#btn-menu');
+  // En el móvil el menú se abre por encima del contenido; en una pantalla
+  // grande se pliega para dejar todo el ancho al contenido. Antes solo hacía
+  // lo primero, así que en el portátil el botón no hacía nada visible.
+  const pantallaChica = window.matchMedia('(max-width: 720px)');
+  try {
+    if (localStorage.getItem('upb.menuPlegado') === '1') document.body.classList.add('sidebar-oculta');
+  } catch { /* sin almacenamiento */ }
   if (menuBtn) {
     menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      sidebar && sidebar.classList.toggle('open');
+      if (pantallaChica.matches) {
+        sidebar && sidebar.classList.toggle('open');
+        return;
+      }
+      const plegado = document.body.classList.toggle('sidebar-oculta');
+      menuBtn.setAttribute('aria-expanded', String(!plegado));
+      try { localStorage.setItem('upb.menuPlegado', plegado ? '1' : '0'); } catch { /* */ }
     });
   }
   document.addEventListener('click', (e) => {
@@ -131,11 +144,15 @@ function initAdminNavVisibility() {
 /* ---------- Rutas ---------- */
 function registerRoutes() {
   registerRoute('/login', loginView.mount, { public: true });
-  registerRoute('/mfa-enroll', mfaEnrollView.mount, { public: true });
-  registerRoute('/archivos', filesView.mount);
+  registerRoute('/configurar-mfa', mfaEnrollView.mount, { public: true });
+  // Drive: una sola vista para todas sus secciones; entre ellas solo se actualiza.
+  registerRoute('/archivos/*', filesView.mount, { update: filesView.update });
+  for (const [seccion, ruta] of Object.entries(filesView.SECTION_PATHS)) {
+    if (seccion !== 'my-drive') registerRoute(ruta, filesView.mount, { update: filesView.update, datos: { seccion } });
+  }
   registerRoute('/fotos', photosView.mount);
   registerRoute('/videos', videosView.mount);
-  registerRoute('/sync', syncView.mount);
+  registerRoute('/sincronizacion', syncView.mount);
   registerRoute('/trabajos', jobsView.mount);
   registerRoute('/monitoreo', monitoringView.mount);
   registerRoute('/admin', adminView.mount, { roles: ['admin'] });
@@ -145,7 +162,7 @@ function registerRoutes() {
   }));
 }
 
-function init() {
+async function init() {
   registerRoutes();
   setAuthGuard(isAuthenticated);
   setRoleGuard((roles) => {
@@ -161,7 +178,12 @@ function init() {
   initResponsiveSidebar();
   initGlobalKeyboard();
   initAvatarMenu();
+  initMenusEncabezado();
+  filesView.initUploadDropzone();
   initAdminNavVisibility();
+  // Antes del enrutador: si había sesión guardada, la ruta pedida se monta
+  // directamente en vez de pasar por el login.
+  await restoreSession();
   initRouter();
 }
 

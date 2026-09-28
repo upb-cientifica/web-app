@@ -1,11 +1,11 @@
 import { $, $$, esc } from '../utils/dom.js';
 import { formatDateTime } from '../utils/format.js';
 import { showToast } from '../components/toast.js';
-import { listUsers, createUser, setUserStatus, updateUserQuota, listServices, listAuditLog } from '../api/admin.js';
-import { listPrincipals } from '../api/users.js';
+import { listUsers, createUser, setUserStatus, updateUserQuota, listServices, listAuditLog, listCatalogs } from '../api/admin.js';
 
 let root = null;
 let groupOptions = [];
+let serviceCodes = [];
 let auditFilters = { userId: 'all', action: 'all', dateFrom: '', dateTo: '' };
 
 const ROLE_LABELS = { admin: 'Administrador', user: 'Usuario' };
@@ -26,13 +26,11 @@ const TEMPLATE = `
     <h2 class="block-title">Gestión de usuarios</h2>
     <div class="admin-add-row">
       <input type="text" class="share-select" id="user-name" placeholder="Nombre">
-      <input type="email" class="share-select" id="user-email" placeholder="correo@upb-cientifica.edu">
-      <select class="share-select" id="user-role">
-        <option value="user">Usuario</option>
-        <option value="admin">Administrador</option>
-      </select>
+      <input type="email" class="share-select" id="user-email" placeholder="correo@upb.edu.co">
+      <input type="password" class="share-select" id="user-password" placeholder="Contraseña inicial" autocomplete="new-password">
+      <select class="share-select" id="user-role"></select>
       <select class="share-select" id="user-group"></select>
-      <input type="number" class="share-select field-narrow-sm" id="user-quota" placeholder="Cuota (GB)" value="50">
+      <input type="number" class="share-select field-narrow-sm" id="user-quota" placeholder="Cuota (GB)" value="1" min="0" step="0.5">
       <button class="btn-primary" id="user-add-btn">Dar de alta</button>
     </div>
     <div id="users-wrap"></div>
@@ -122,25 +120,36 @@ async function refreshUsers() {
 
 async function initCreateUserForm() {
   const groupSelect = $('#user-group', root);
+  const roleSelect = $('#user-role', root);
+  // Roles, grupos y servicios salen del catálogo del directorio: son los
+  // mismos valores que acepta al crear, y los servicios son los que luego
+  // viajan en el claim del JWT.
   try {
-    const principals = await listPrincipals();
-    groupOptions = principals.filter((p) => p.type === 'group');
-    groupSelect.innerHTML = groupOptions.map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+    const cat = await listCatalogs();
+    groupOptions = cat.groups;
+    serviceCodes = cat.services.map((s) => s.code);
+    roleSelect.innerHTML = cat.roles.map((r) => `<option value="${esc(r.code)}">${esc(r.name)}</option>`).join('');
+    groupSelect.innerHTML = '<option value="">Sin grupo</option>'
+      + cat.groups.map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
   } catch (err) {
-    showToast('No se pudieron cargar los grupos', 'error');
+    showToast('No se pudieron cargar los catálogos', 'error');
   }
 
   $('#user-add-btn', root).addEventListener('click', async () => {
     const name = $('#user-name', root).value.trim();
     const email = $('#user-email', root).value.trim();
-    const role = $('#user-role', root).value;
+    const password = $('#user-password', root).value;
+    const role = roleSelect.value;
     const groupId = groupSelect.value || null;
     const quotaGB = $('#user-quota', root).value;
     try {
-      await createUser({ name, email, role, groupId, quotaGB });
+      // Una cuenta sin servicios no podría entrar a nada: se da de alta con
+      // todo el catálogo y el administrador recorta después si hace falta.
+      await createUser({ name, email, password, role, groupId, quotaGB, services: serviceCodes });
       showToast('Usuario dado de alta', 'success');
       $('#user-name', root).value = '';
       $('#user-email', root).value = '';
+      $('#user-password', root).value = '';
       await refreshUsers();
       await refreshAudit();
       await populateAuditUserFilter();

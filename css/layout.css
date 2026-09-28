@@ -234,6 +234,12 @@
   background: var(--bg);
 }
 
+/* La hamburguesa pliega el menú lateral en pantallas grandes; en el móvil
+   lo abre y cierra por encima del contenido (ver el bloque responsive). */
+@media (min-width: 721px) {
+  body.sidebar-oculta .sidebar { display: none; }
+}
+
 /* ============================================================
    MODO AUTENTICACIÓN: oculta el chrome de la app (topbar/sidebar)
    en pantallas públicas como login y enrolamiento MFA.
