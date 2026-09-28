@@ -17,6 +17,7 @@ import * as videosView from './views/videosView.js';
 import * as syncView from './views/syncView.js';
 import * as adminView from './views/adminView.js';
 import { initAvatarMenu } from './components/avatarMenu.js';
+import { initMenusEncabezado } from './components/menusEncabezado.js';
 import { isAuthenticated, restoreSession } from './session.js';
 import { appStore } from './state.js';
 
@@ -90,10 +91,23 @@ function initModuleNav() {
 function initResponsiveSidebar() {
   const sidebar = $('.sidebar');
   const menuBtn = $('#btn-menu');
+  // En el móvil el menú se abre por encima del contenido; en una pantalla
+  // grande se pliega para dejar todo el ancho al contenido. Antes solo hacía
+  // lo primero, así que en el portátil el botón no hacía nada visible.
+  const pantallaChica = window.matchMedia('(max-width: 720px)');
+  try {
+    if (localStorage.getItem('upb.menuPlegado') === '1') document.body.classList.add('sidebar-oculta');
+  } catch { /* sin almacenamiento */ }
   if (menuBtn) {
     menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      sidebar && sidebar.classList.toggle('open');
+      if (pantallaChica.matches) {
+        sidebar && sidebar.classList.toggle('open');
+        return;
+      }
+      const plegado = document.body.classList.toggle('sidebar-oculta');
+      menuBtn.setAttribute('aria-expanded', String(!plegado));
+      try { localStorage.setItem('upb.menuPlegado', plegado ? '1' : '0'); } catch { /* */ }
     });
   }
   document.addEventListener('click', (e) => {
@@ -164,6 +178,7 @@ async function init() {
   initResponsiveSidebar();
   initGlobalKeyboard();
   initAvatarMenu();
+  initMenusEncabezado();
   filesView.initUploadDropzone();
   initAdminNavVisibility();
   // Antes del enrutador: si había sesión guardada, la ruta pedida se monta

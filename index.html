@@ -13,6 +13,8 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <!-- Tipografía Roboto + Material Icons autohospedadas (sin CDN externo) -->
   <link rel="stylesheet" href="assets/fonts/fonts.css">
+  <!-- Antes que el CSS: fija el tema guardado sin que la página parpadee. -->
+  <script src="js/tema-inicial.js"></script>
   <link rel="stylesheet" href="css/tokens.css">
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/components.css">
@@ -47,15 +49,21 @@
     </div>
 
     <div class="topbar-right">
-      <button class="icon-btn" title="Soporte" aria-label="Soporte">
+      <button class="icon-btn" id="btn-ayuda" title="Ayuda" aria-label="Ayuda">
         <span class="material-icons">help_outline</span>
       </button>
-      <button class="icon-btn" title="Ajustes" aria-label="Ajustes">
-        <span class="material-icons">settings</span>
-      </button>
-      <button class="icon-btn" title="Aplicaciones" aria-label="Aplicaciones">
-        <span class="material-icons">apps</span>
-      </button>
+      <div class="header-menu-wrap">
+        <button class="icon-btn" id="btn-ajustes" title="Ajustes" aria-label="Ajustes">
+          <span class="material-icons">settings</span>
+        </button>
+        <div class="header-menu hidden" id="menu-ajustes" role="menu" aria-label="Ajustes"></div>
+      </div>
+      <div class="header-menu-wrap">
+        <button class="icon-btn" id="btn-aplicaciones" title="Secciones" aria-label="Secciones">
+          <span class="material-icons">apps</span>
+        </button>
+        <div class="header-menu apps-menu hidden" id="menu-aplicaciones" role="menu" aria-label="Secciones"></div>
+      </div>
       <div class="avatar-wrap">
         <button class="avatar" id="avatar-btn" title="Cuenta" aria-label="Cuenta" aria-haspopup="true">YS</button>
         <div class="avatar-menu hidden" id="avatar-menu"></div>
@@ -132,7 +140,7 @@
           <span>Trabajos MPI</span>
         </button>
         <button class="nav-item" data-route="/monitoreo">
-          <span class="material-icons">monitoring</span>
+          <span class="material-icons">monitor_heart</span>
           <span>Monitoreo</span>
         </button>
         <button class="nav-item" data-route="/admin">
@@ -186,6 +194,41 @@
   </div>
 
   <!-- ============ MODAL: VISTA PREVIA ============ -->
+  <!-- ============ MODAL: AYUDA ============ -->
+  <div class="modal hidden" id="modal-ayuda">
+    <div class="modal-card help-card" aria-labelledby="ayuda-title">
+      <div class="modal-head">
+        <h3 id="ayuda-title">Ayuda</h3>
+        <button class="icon-btn" data-close-modal="modal-ayuda" aria-label="Cerrar">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <div class="help-body">
+        <dl class="help-list">
+          <dt>Mi unidad</dt>
+          <dd>Tu Home: carpetas y archivos, con permisos y versiones. Sube con <strong>Nuevo</strong>;
+              cada archivo tiene sus acciones en el botón <strong>⋮</strong> o con clic derecho.</dd>
+          <dt>Compartido conmigo</dt>
+          <dd>Lo que otras cuentas te dieron a leer o editar.</dd>
+          <dt>Papelera</dt>
+          <dd>Lo eliminado se conserva aquí y se puede restaurar hasta vaciarla.</dd>
+          <dt>Fotos y Videos</dt>
+          <dd>Las imágenes y los videos que subes a Mi unidad se publican solos en su catálogo.
+              Los videos se ven por streaming: llegan en trozos, no se descargan enteros.</dd>
+          <dt>Sincronización</dt>
+          <dd>Una carpeta de tu equipo que se mantiene igual en el servidor. Se configura desde la
+              aplicación de escritorio.</dd>
+          <dt>Trabajos MPI</dt>
+          <dd>Programas que se ejecutan en el clúster del laboratorio.</dd>
+          <dt>Monitoreo</dt>
+          <dd>Cómo van las máquinas y qué servicios responden.</dd>
+        </dl>
+        <p class="help-foot">El tema claro u oscuro se cambia en <strong>Ajustes</strong>
+          (<span class="material-icons help-inline">settings</span>). Cuota por cuenta: 1 GB.</p>
+      </div>
+    </div>
+  </div>
+
   <div class="modal hidden" id="modal-preview">
     <div class="modal-card preview-card" aria-labelledby="preview-title">
       <div class="modal-head">

@@ -222,3 +222,87 @@
   from { opacity: 0; transform: translate(-50%, 16px); }
   to   { opacity: 1; transform: translateX(-50%); }
 }
+
+/* ============================================================
+   MENÚS DEL ENCABEZADO (Ajustes, Secciones)
+   ============================================================ */
+.header-menu-wrap { position: relative; }
+.header-menu {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  min-width: 240px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-3);
+  padding: 8px 0;
+  z-index: 60;
+  animation: menu-in .12s ease;
+}
+.header-menu-title {
+  padding: 6px 16px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.header-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 16px;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.header-menu-item:hover { background: var(--surface-2); }
+.header-menu-item:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.header-menu-item .material-icons { font-size: 20px; color: var(--text-2); }
+.header-menu-item.active { color: var(--primary); }
+.header-menu-item.active .material-icons { color: var(--primary); }
+.header-menu-check { margin-left: auto; }
+
+.apps-menu { min-width: 0; width: 300px; padding: 12px; }
+.apps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.apps-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 4px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.apps-item:hover { background: var(--surface-2); }
+.apps-item:focus-visible { outline: 2px solid var(--primary); }
+.apps-item .material-icons {
+  font-size: 26px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-radius: var(--radius-full);
+  padding: 10px;
+}
+
+/* ============================================================
+   AYUDA
+   ============================================================ */
+.help-card { max-width: 560px; }
+.help-body { padding: 4px 24px 20px; overflow-y: auto; }
+.help-list { display: grid; gap: 4px 0; }
+.help-list dt { font-weight: 500; color: var(--text); margin-top: 10px; }
+.help-list dd { color: var(--text-2); font-size: 14px; line-height: 1.5; max-width: 62ch; }
+.help-foot { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);
+             color: var(--text-2); font-size: 13px; }
+.help-inline { font-size: 16px; vertical-align: -3px; }
