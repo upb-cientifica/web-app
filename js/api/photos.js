@@ -1,7 +1,7 @@
 // API del álbum de fotos.
 
 import { USE_MOCKS, API_BASE } from '../config.js';
-import { request, qs, getAuthToken } from './client.js';
+import { request, requestBlob, qs, getAuthToken } from './client.js';
 import { delay, clone } from './mock/helpers.js';
 import { collections, photos } from './mock/photosData.js';
 
@@ -61,6 +61,7 @@ function aFoto(im) {
     width: im.ancho,
     height: im.alto,
     description: im.descripcion || '',
+    origenHome: im.origenHome || '',
   };
 }
 
@@ -175,6 +176,24 @@ const setAlbumPublicReal = async (id, activo) => aAlbum(await request(
   `${API_BASE.photos}/albums/${encodeURIComponent(id)}/publico${qs({ accion: activo ? 'activar' : 'desactivar' })}`,
   { method: 'POST', retries: 0 }));
 
+async function removePhotoMock(id) {
+  await delay();
+  const i = photos.findIndex((p) => p.id === id);
+  if (i >= 0) photos.splice(i, 1);
+}
+
+const removePhotoReal = (id) =>
+  request(`${API_BASE.photos}/imagenes/${encodeURIComponent(id)}`, { method: 'DELETE', retries: 0 });
+
+/** Bytes originales de la foto, para guardarla en el equipo. */
+const downloadPhotoReal = (id) => requestBlob(`${API_BASE.photos}/imagenes/${encodeURIComponent(id)}`);
+async function downloadPhotoMock(id) {
+  const foto = photos.find((p) => p.id === id);
+  return (await fetch(foto?.url || '')).blob();
+}
+
+export const removePhoto = USE_MOCKS ? removePhotoMock : removePhotoReal;
+export const downloadPhoto = USE_MOCKS ? downloadPhotoMock : downloadPhotoReal;
 export const updatePhoto = USE_MOCKS ? updatePhotoMock : updatePhotoReal;
 export const shareAlbum = USE_MOCKS ? shareAlbumMock : shareAlbumReal;
 export const setAlbumPublic = USE_MOCKS ? setAlbumPublicMock : setAlbumPublicReal;

@@ -6,7 +6,7 @@ let cerrarActual = null;
 
 export function closeSlideshow() { cerrarActual?.(); }
 
-export function openSlideshow(photos) {
+export function openSlideshow(photos, inicio = 0) {
   closeSlideshow();
   if (!photos.length) return;
   const fotos = [...photos];
@@ -28,7 +28,7 @@ export function openSlideshow(photos) {
     </div>`;
   document.body.appendChild(overlay);
   const imagenes = $$('.slideshow-image', overlay);
-  let indice = 0;
+  let indice = Math.min(Math.max(0, inicio), photos.length - 1);
   let capa = 1;
   let version = 0;
   let cerrado = false;

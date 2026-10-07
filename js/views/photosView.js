@@ -1,7 +1,10 @@
 import { $, $$, esc } from '../utils/dom.js';
 import { formatDate } from '../utils/format.js';
 import { photoDataUri } from '../utils/placeholderImage.js';
-import { listCollections, listTags, listPhotos } from '../api/photos.js';
+import { listCollections, listTags, listPhotos, removePhoto, downloadPhoto } from '../api/photos.js';
+import { deleteItem } from '../api/files.js';
+import { createContextMenu } from '../components/contextMenu.js';
+import { showConfirm } from '../components/dialogs.js';
 import { openPhotoViewer } from '../components/photoViewer.js';
 import { openPhotoEditModal } from '../components/photoEditModal.js';
 import { openAlbumShareModal } from '../components/albumShareModal.js';
@@ -15,6 +18,8 @@ let currentPhotos = [];
 let albums = [];
 let busquedaTimer = null;
 let carga = 0;
+let menu = null;
+let fotoDelMenu = null;
 let filters = { collectionId: 'all', tag: 'all', dateFrom: '', dateTo: '', q: '' };
 
 const TEMPLATE = `
@@ -49,8 +54,8 @@ function cardHTML(photo, i) {
         <span class="photo-date">${esc(formatDate(photo.dateTaken))}</span>
         <span class="photo-tags">${photo.tags.slice(0, 3).map((t) => `<span class="photo-tag">${esc(t)}</span>`).join('')}${photo.tags.length > 3 ? `<span class="photo-tag">+${photo.tags.length - 3}</span>` : ''}</span>
       </figcaption>
-      <button class="icon-btn photo-edit-btn" data-photo-id="${esc(photo.id)}" title="Editar detalles" aria-label="Editar detalles">
-        <span class="material-icons">edit</span>
+      <button class="icon-btn photo-edit-btn" data-photo-id="${esc(photo.id)}" title="Más acciones" aria-label="Más acciones para ${esc(photo.name)}" aria-haspopup="menu">
+        <span class="material-icons">more_vert</span>
       </button>
     </figure>
   `;
@@ -100,6 +105,52 @@ function renderToolbar(cargando = false) {
   }));
 }
 
+// Lo que se puede hacer con una foto desde sus tres puntos.
+async function accionDeFoto(act) {
+  const photo = fotoDelMenu;
+  if (!photo || !root) return;
+  if (act === 'ver') openViewerFrom(photo.id);
+  else if (act === 'presentar') openSlideshow(currentPhotos, currentPhotos.findIndex((p) => p.id === photo.id));
+  else if (act === 'editar') {
+    openPhotoEditModal(photo, async () => {
+      await refreshTags();
+      await refreshGrid();
+    });
+  } else if (act === 'descargar') {
+    try {
+      const blob = await downloadPhoto(photo.id);
+      const url = URL.createObjectURL(blob);
+      const a = Object.assign(document.createElement('a'), { href: url, download: photo.name });
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      showToast(err.message || 'No se pudo descargar la foto', 'error');
+    }
+  } else if (act === 'compartir') {
+    const album = albums.find((a) => a.id === photo.collectionId);
+    if (album) openAlbumShareModal(album, (actualizado) => {
+      albums = albums.map((a) => a.id === actualizado.id ? actualizado : a);
+      if (root) renderToolbar();
+    });
+  } else if (act === 'papelera') {
+    const ok = await showConfirm(`¿Mover "${photo.name}" a la papelera? Deja de estar en Fotos y el archivo se puede recuperar desde la Papelera.`,
+      { confirmLabel: 'Mover a la papelera', danger: true });
+    if (!ok) return;
+    try {
+      await removePhoto(photo.id);
+      // El archivo del Home del que salió la foto va a la papelera, para poder recuperarlo.
+      if (photo.origenHome) await deleteItem({ id: photo.origenHome });
+      showToast('Foto movida a la papelera', 'success');
+      await refreshTags();
+      await refreshGrid();
+    } catch (err) {
+      showToast(err.message || 'No se pudo mover a la papelera', 'error');
+    }
+  }
+}
+
 async function refreshTags() {
   const vista = root;
   try {
@@ -140,10 +191,14 @@ async function refreshGrid() {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const photo = currentPhotos.find((p) => p.id === btn.dataset.photoId);
-        if (photo) openPhotoEditModal(photo, async () => {
-          await refreshTags();
-          await refreshGrid();
-        });
+        if (!photo) return;
+        fotoDelMenu = photo;
+        // Compartir es del álbum: sólo se ofrece si quien mira puede editarlo.
+        const album = albums.find((a) => a.id === photo.collectionId);
+        $('#photo-menu [data-act="compartir"]').classList.toggle('hidden',
+          !album || !['propietario', 'admin'].includes(album.role));
+        const r = btn.getBoundingClientRect();
+        menu.show(r.right - 220, r.bottom + 4);
       });
     });
 
@@ -211,6 +266,7 @@ export async function mount(rootEl) {
   currentPhotos = [];
   filters = { collectionId: 'all', tag: 'all', dateFrom: '', dateTo: '', q: '' };
   root.innerHTML = TEMPLATE;
+  menu = createContextMenu('photo-menu', accionDeFoto);
 
   await initFilters();
   await refreshGrid();
@@ -220,6 +276,7 @@ export async function mount(rootEl) {
     clearTimeout(busquedaTimer);
     ++carga;
     closeSlideshow();
+    if (menu) { menu.hide(); menu.destroy(); menu = null; }
     closeModal('modal-photo-edit');
     closeModal('modal-album-share');
     root = null;
