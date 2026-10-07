@@ -30,3 +30,11 @@ export const photos = [
   { id: 'p19', name: 'Vista del datacenter de noche', collectionId: 'c1', tags: ['viaje', 'paisaje'], dateTaken: T(3) },
   { id: 'p20', name: 'Cierre de sprint',             collectionId: 'c2', tags: ['equipo', 'evento'], dateTaken: T(1) },
 ];
+
+collections.forEach((album, i) => {
+  Object.assign(album, {
+    count: photos.filter((foto) => foto.collectionId === album.id).length,
+    owner: 'ana.torres@upb.edu.co', role: ['propietario', 'admin', 'compartido'][i],
+    publico: false, urlPublica: '', sharedWith: ['carlos@upb.edu.co'],
+  });
+});

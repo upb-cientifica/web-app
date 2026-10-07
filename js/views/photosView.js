@@ -3,12 +3,19 @@ import { formatDate } from '../utils/format.js';
 import { photoDataUri } from '../utils/placeholderImage.js';
 import { listCollections, listTags, listPhotos } from '../api/photos.js';
 import { openPhotoViewer } from '../components/photoViewer.js';
-import { openShareModal } from '../components/shareModal.js';
+import { openPhotoEditModal } from '../components/photoEditModal.js';
+import { openAlbumShareModal } from '../components/albumShareModal.js';
+import { openSlideshow, closeSlideshow } from '../components/slideshow.js';
+import { closeModal } from '../components/modal.js';
+import { showToast } from '../components/toast.js';
 
 let root = null;
 let observer = null;
 let currentPhotos = [];
-let filters = { collectionId: 'all', tag: 'all', dateFrom: '', dateTo: '' };
+let albums = [];
+let busquedaTimer = null;
+let carga = 0;
+let filters = { collectionId: 'all', tag: 'all', dateFrom: '', dateTo: '', q: '' };
 
 const TEMPLATE = `
   <div class="main-header">
@@ -16,6 +23,7 @@ const TEMPLATE = `
   </div>
 
   <div class="photos-filters">
+    <label class="share-field photos-search"><span>Buscar fotos</span><input type="search" class="share-select" id="photo-search" placeholder="Título, descripción o etiquetas"></label>
     <div class="quick-filters" id="collection-filters"></div>
     <label class="share-field">
       <span>Etiqueta</span>
@@ -25,20 +33,24 @@ const TEMPLATE = `
     <label class="share-field"><span>Hasta</span><input type="date" class="share-select" id="date-to"></label>
   </div>
 
+  <div class="album-toolbar" id="album-toolbar"></div>
   <div class="photos-grid" id="photos-grid"></div>
 `;
 
 function cardHTML(photo, i) {
   return `
-    <figure class="photo-card" data-photo-id="${esc(photo.id)}" data-idx="${i}" tabindex="0" role="button" aria-label="${esc(photo.name)}">
+    <figure class="photo-card" data-photo-id="${esc(photo.id)}" data-idx="${i}">
+      <button class="photo-open-btn" aria-label="Ver ${esc(photo.name)}">
       <div class="photo-thumb-skeleton"></div>
-      <img class="photo-thumb" alt="${esc(photo.name)}" loading="lazy">
+      <img class="photo-thumb" alt="" loading="lazy">
+      </button>
       <figcaption>
         <span class="photo-name">${esc(photo.name)}</span>
         <span class="photo-date">${esc(formatDate(photo.dateTaken))}</span>
+        <span class="photo-tags">${photo.tags.slice(0, 3).map((t) => `<span class="photo-tag">${esc(t)}</span>`).join('')}${photo.tags.length > 3 ? `<span class="photo-tag">+${photo.tags.length - 3}</span>` : ''}</span>
       </figcaption>
-      <button class="icon-btn photo-share-btn" data-photo-id="${esc(photo.id)}" title="Compartir" aria-label="Compartir foto">
-        <span class="material-icons">person_add</span>
+      <button class="icon-btn photo-edit-btn" data-photo-id="${esc(photo.id)}" title="Editar detalles" aria-label="Editar detalles">
+        <span class="material-icons">edit</span>
       </button>
     </figure>
   `;
@@ -72,14 +84,49 @@ function initLazyLoading(grid) {
 function openViewerFrom(id) {
   const idx = currentPhotos.findIndex((p) => p.id === id);
   if (idx < 0) return;
-  openPhotoViewer(currentPhotos, idx, { onShare: (photo) => openShareModal(photo) });
+  openPhotoViewer(currentPhotos, idx);
+}
+
+function renderToolbar(cargando = false) {
+  const album = albums.find((a) => a.id === filters.collectionId);
+  const toolbar = $('#album-toolbar', root);
+  toolbar.innerHTML = `<div><strong>${esc(album?.name || 'Todas las fotos')}</strong><span class="photo-help">${cargando ? 'Cargando…' : `${currentPhotos.length} fotos mostradas`}${album ? ` · ${esc(album.count ?? 0)} en el álbum` : ''}</span></div>
+    <div class="album-toolbar-actions">${album && ['propietario', 'admin'].includes(album.role) ? '<button class="btn-text" id="album-share">Compartir álbum</button>' : ''}
+    <button class="btn-primary" id="photos-present" ${cargando || !currentPhotos.length ? 'disabled' : ''}>Presentación</button></div>`;
+  $('#photos-present', toolbar).addEventListener('click', () => openSlideshow(currentPhotos));
+  $('#album-share', toolbar)?.addEventListener('click', () => openAlbumShareModal(album, (actualizado) => {
+    albums = albums.map((a) => a.id === actualizado.id ? actualizado : a);
+    if (root) renderToolbar();
+  }));
+}
+
+async function refreshTags() {
+  const vista = root;
+  try {
+    const tags = await listTags();
+    if (!vista || root !== vista) return;
+    const select = $('#tag-filter', vista);
+    if (!tags.includes(filters.tag)) filters.tag = 'all';
+    select.innerHTML = '<option value="all">Todas</option>' + tags.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    select.value = filters.tag;
+  } catch {
+    showToast('No se pudieron actualizar las etiquetas', 'error');
+  }
 }
 
 async function refreshGrid() {
+  if (!root) return;
+  clearTimeout(busquedaTimer);
+  const turno = ++carga;
+  if (observer) observer.disconnect();
+  renderToolbar(true);
   const grid = $('#photos-grid', root);
   grid.innerHTML = '<div class="empty-state"><span class="material-icons">hourglass_empty</span><p>Cargando fotos…</p></div>';
   try {
-    currentPhotos = await listPhotos(filters);
+    const fotos = await listPhotos({ ...filters });
+    if (!root || turno !== carga) return;
+    currentPhotos = fotos;
+    renderToolbar();
     if (!currentPhotos.length) {
       grid.innerHTML = `<div class="empty-state"><span class="material-icons">photo_library</span><p>No hay fotos con estos filtros</p></div>`;
       return;
@@ -87,35 +134,38 @@ async function refreshGrid() {
     grid.innerHTML = currentPhotos.map(cardHTML).join('');
 
     $$('.photo-card', grid).forEach((card) => {
-      card.addEventListener('click', (e) => {
-        if (e.target.closest('.photo-share-btn')) return;
-        openViewerFrom(card.dataset.photoId);
-      });
-      card.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openViewerFrom(card.dataset.photoId); }
-      });
+      $('.photo-open-btn', card).addEventListener('click', () => openViewerFrom(card.dataset.photoId));
     });
-    $$('.photo-share-btn', grid).forEach((btn) => {
+    $$('.photo-edit-btn', grid).forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const photo = currentPhotos.find((p) => p.id === btn.dataset.photoId);
-        if (photo) openShareModal(photo);
+        if (photo) openPhotoEditModal(photo, async () => {
+          await refreshTags();
+          await refreshGrid();
+        });
       });
     });
 
     initLazyLoading(grid);
   } catch (err) {
+    if (!root || turno !== carga) return;
+    currentPhotos = [];
+    renderToolbar();
     grid.innerHTML = `<p class="share-error">No se pudieron cargar las fotos.</p>`;
   }
 }
 
 async function initFilters() {
+  const vista = root;
   const collectionsWrap = $('#collection-filters', root);
   const tagSelect = $('#tag-filter', root);
 
   try {
     const [collections, tags] = await Promise.all([listCollections(), listTags()]);
 
+    if (root !== vista) return;
+    albums = collections;
     collectionsWrap.innerHTML = ['<button class="filter-chip active" data-collection="all">Todas</button>']
       .concat(collections.map((c) => `<button class="filter-chip" data-collection="${esc(c.id)}">${esc(c.name)}</button>`))
       .join('');
@@ -139,6 +189,14 @@ async function initFilters() {
     collectionsWrap.innerHTML = `<p class="share-error">No se pudieron cargar las colecciones.</p>`;
   }
 
+  if (root !== vista) return;
+  $('#photo-search', root).addEventListener('input', (e) => {
+    filters.q = e.target.value;
+    clearTimeout(busquedaTimer);
+    ++carga;
+    renderToolbar(true);
+    busquedaTimer = setTimeout(refreshGrid, 300);
+  });
   tagSelect.addEventListener('change', () => {
     filters.tag = tagSelect.value;
     refreshGrid();
@@ -149,7 +207,9 @@ async function initFilters() {
 
 export async function mount(rootEl) {
   root = rootEl;
-  filters = { collectionId: 'all', tag: 'all', dateFrom: '', dateTo: '' };
+  albums = [];
+  currentPhotos = [];
+  filters = { collectionId: 'all', tag: 'all', dateFrom: '', dateTo: '', q: '' };
   root.innerHTML = TEMPLATE;
 
   await initFilters();
@@ -157,6 +217,11 @@ export async function mount(rootEl) {
 
   return function unmount() {
     if (observer) { observer.disconnect(); observer = null; }
+    clearTimeout(busquedaTimer);
+    ++carga;
+    closeSlideshow();
+    closeModal('modal-photo-edit');
+    closeModal('modal-album-share');
     root = null;
   };
 }

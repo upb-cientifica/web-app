@@ -116,6 +116,7 @@ export function openPhotoViewer(photosList, startIndex = 0, { onShare } = {}) {
   overlay.querySelector('.viewer-zoom-btn').addEventListener('click', toggleZoom);
   overlay.querySelector('.viewer-image').addEventListener('click', toggleZoom);
   overlay.querySelector('.viewer-slideshow-btn').addEventListener('click', toggleSlideshow);
+  overlay.querySelector('.viewer-share-btn').classList.toggle('hidden', !onShareCallback);
   overlay.querySelector('.viewer-share-btn').addEventListener('click', () => {
     if (onShareCallback) onShareCallback(currentPhoto());
   });

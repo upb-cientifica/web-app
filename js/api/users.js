@@ -98,7 +98,7 @@ async function listPrincipalsMock({ search = '' } = {}) {
 // la forma que consume la interfaz.
 
 /** El usuario puede escribir "ana.torres" o el correo completo. */
-function aCorreo(username) {
+export function aCorreo(username) {
   const u = (username || '').trim();
   return u.includes('@') ? u : `${u}@${DOMINIO_CORREO}`;
 }
