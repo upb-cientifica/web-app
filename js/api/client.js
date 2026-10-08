@@ -99,3 +99,40 @@ export function qs(params = {}) {
   const s = p.toString();
   return s ? `?${s}` : '';
 }
+
+/** Sube bytes sin copiarlos a memoria y sin reintentos automáticos. */
+export function uploadWithProgress({ url, file, onProgress, signal }) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const abortError = () => new ApiError('Subida cancelada', {
+      cause: new DOMException('Subida cancelada', 'AbortError'), codigo: 'ABORTED',
+    });
+    const abort = () => xhr.abort();
+    const finish = (fn, value) => {
+      signal?.removeEventListener('abort', abort);
+      fn(value);
+    };
+    if (signal?.aborted) { reject(abortError()); return; }
+    xhr.open('POST', url);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    if (authToken) xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+    xhr.upload.onprogress = (event) => onProgress?.({
+      loaded: event.loaded, total: event.lengthComputable ? event.total : file.size,
+    });
+    xhr.onload = () => {
+      let payload = null;
+      try { payload = JSON.parse(xhr.responseText); } catch { /* respuesta sin JSON */ }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        finish(reject, new ApiError(payload?.error?.mensaje || payload?.message || `Error ${xhr.status} en ${url}`,
+          { status: xhr.status, codigo: payload?.error?.codigo || '' }));
+        return;
+      }
+      finish(resolve, payload && Object.prototype.hasOwnProperty.call(payload, 'data') ? payload.data : payload);
+    };
+    xhr.onerror = () => finish(reject, new ApiError('No se pudo subir el archivo: error de red'));
+    xhr.ontimeout = () => finish(reject, new ApiError('Se agotó el tiempo de la subida'));
+    xhr.onabort = () => finish(reject, abortError());
+    signal?.addEventListener('abort', abort, { once: true });
+    xhr.send(file);
+  });
+}

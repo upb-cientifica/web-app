@@ -90,7 +90,7 @@ function startSimulation(job) {
 }
 
 // Reanuda la simulación de los trabajos semilla que ya estaban "en cola"/"ejecutando".
-jobs.filter((j) => j.status === 'queued' || j.status === 'running').forEach((j) => startSimulation(j));
+if (USE_MOCKS) jobs.filter((j) => j.status === 'queued' || j.status === 'running').forEach((j) => startSimulation(j));
 
 // ---------- Modo mock ----------
 
@@ -176,6 +176,8 @@ function aJob(t, log = []) {
     nodes: 0,
     timeLimitMinutes: 0,
     envVars: [],
+    command: t.comando || '',
+    folder: t.rutaHome || '',
     sourceFileName: t.comando || '',
     datasetFileName: t.rutaHome || '',
     submittedAt: t.creadoEn,
@@ -214,12 +216,14 @@ const getJobReal = async ({ id }) => {
  * El clúster recibe un ejecutable con sus argumentos, como espera `mpirun`, y
  * la ruta del Home de donde traer el código y los datasets.
  */
-async function submitJobReal({ name, processes = 1, sourceFileName, datasetFileName } = {}) {
-  if (!sourceFileName) throw new Error('Indica el programa a ejecutar');
+async function submitJobReal({ name, processes = 1, command, folder } = {}) {
+  if (!command?.trim()) throw new Error('Indica el programa a ejecutar');
+  if (!folder?.trim()) throw new Error('Selecciona una carpeta de Mi unidad');
   const { id } = await request(`${API_BASE.jobs}/trabajos${qs({
-    nombre: name, comando: sourceFileName, procesos: processes, rutaHome: datasetFileName,
-  })}`, { method: 'POST' });
-  return getJobReal({ id });
+    nombre: name, comando: command.trim(), procesos: processes, rutaHome: folder.trim(),
+  })}`, { method: 'POST', retries: 0 });
+  // El envío ya fue aceptado: un fallo posterior de lectura no debe invitar a duplicarlo.
+  return { id };
 }
 
 const cancelJobReal = async ({ id }) => {

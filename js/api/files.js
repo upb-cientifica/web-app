@@ -2,7 +2,7 @@
 // Misma firma en modo mock y modo real; el interruptor está en js/config.js.
 
 import { USE_MOCKS, API_BASE } from '../config.js';
-import { request, requestBlob, qs } from './client.js';
+import { request, requestBlob, qs, uploadWithProgress } from './client.js';
 import { agregarAFotos } from './photos.js';
 import { importarVideo } from './videos.js';
 import { delay, genId, clone } from './mock/helpers.js';
@@ -315,9 +315,11 @@ const createFileReal = async ({ name, parentId }) =>
  * los reenvía sin tocarlos. Sin reintento: repetir un archivo grande a ciegas
  * por un fallo de red duplicaría el tráfico sin avisar.
  */
-const uploadFileReal = async ({ file, parentId }) => {
-  const item = aItem(await request(`${API_BASE.files}/files/upload${qs({ ruta: parentId || '/', nombre: file.name })}`,
-    { method: 'POST', body: file, retries: 0 }));
+const uploadFileReal = async ({ file, parentId, onProgress, signal }) => {
+  const item = aItem(await uploadWithProgress({
+    url: `${API_BASE.files}/files/upload${qs({ ruta: parentId || '/', nombre: file.name })}`,
+    file, onProgress, signal,
+  }));
   // Una imagen subida a Mi unidad también debe verse en Fotos. El Álbum la
   // toma del Home por RMI (no se vuelve a subir desde el navegador); si eso
   // falla, el archivo ya quedó guardado y solo se avisa en consola.

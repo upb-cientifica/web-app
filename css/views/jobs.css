@@ -93,3 +93,13 @@
   .jobs-layout { flex-direction: column; }
   .job-detail { flex: 1 1 auto; width: 100%; max-height: none; }
 }
+
+/* Subida y selección de la carpeta del Home. */
+.job-submit-card { max-height: 90vh; overflow-y: auto; }
+.job-help { font-size: 12px; line-height: 1.5; color: var(--text-3); overflow-wrap: anywhere; }
+.job-progress { display: block; width: 100%; height: 16px; accent-color: var(--primary); }
+.job-path { overflow-wrap: anywhere; white-space: normal; text-align: left; }
+.job-folder-nav { display: flex; gap: 8px; flex-wrap: wrap; }
+.job-folder-list { max-height: 180px; overflow-y: auto; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.job-folder-option { display: block; width: 100%; text-align: left; overflow-wrap: anywhere; }
+.job-detail-actions { flex-wrap: wrap; }

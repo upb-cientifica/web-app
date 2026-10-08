@@ -2,8 +2,11 @@ import { $, $$, esc } from '../utils/dom.js';
 import { formatDateTime, formatDuration } from '../utils/format.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
-import { listJobs, getJob, submitJob, cancelJob, subscribeJobLog } from '../api/jobs.js';
-import { createFile } from '../api/files.js';
+import { listJobs, getJob, submitJob, cancelJob, subscribeJobLog, listNodes } from '../api/jobs.js';
+import { USE_MOCKS } from '../config.js';
+import { navigate, rutaDe } from '../router.js';
+import { createFile, createFolder, uploadFile, listItems } from '../api/files.js';
+import { renovarSesion } from '../session.js';
 
 const STATUS_LABELS = {
   queued: 'Encolado', running: 'Ejecutando', completed: 'Completado',
@@ -17,6 +20,8 @@ let selectedJobId = null;
 let refreshTimer = null;
 let logUnsubscribe = null;
 let envRowCount = 0;
+let detailVersion = 0;
+let detailBusy = false;
 
 const TEMPLATE = `
   <div class="main-header">
@@ -167,6 +172,7 @@ function envVarsHTML(job) {
 
 async function openDetail(jobId) {
   selectedJobId = jobId;
+  const version = ++detailVersion;
   if (logUnsubscribe) { logUnsubscribe(); logUnsubscribe = null; }
 
   const panel = $('#job-detail', root);
@@ -177,6 +183,7 @@ async function openDetail(jobId) {
 
   try {
     const job = await getJob({ id: jobId });
+    if (version !== detailVersion || !root) return;
     panel.innerHTML = `
       <div class="details-head">
         <h3>${esc(job.name)}</h3>
@@ -186,28 +193,35 @@ async function openDetail(jobId) {
         ${statusBadge(job.status)}
         <dl class="details-facts">
           <dt>Procesos</dt><dd>${job.processes}</dd>
-          <dt>Nodos solicitados</dt><dd>${job.nodes}</dd>
+          ${USE_MOCKS ? `<dt>Nodos solicitados</dt><dd>${job.nodes}</dd>
           <dt>Nodos asignados</dt><dd>${job.assignedNodes.length ? esc(job.assignedNodes.join(', ')) : '—'}</dd>
           <dt>Tiempo límite</dt><dd>${job.timeLimitMinutes} min</dd>
           <dt>Código fuente</dt><dd>${esc(job.sourceFileName)}</dd>
           <dt>Dataset</dt><dd>${esc(job.datasetFileName)}</dd>
+          ` : `<dt>Comando</dt><dd class="job-path">${esc(job.command || '—')}</dd>
+          <dt>Carpeta</dt><dd><button type="button" class="btn-text job-path" id="job-folder">${esc(job.folder || '—')}</button></dd>`}
           <dt>Enviado</dt><dd>${esc(formatDateTime(job.submittedAt))}</dd>
           <dt>Tiempo transcurrido</dt><dd id="job-elapsed">${durationText(job)}</dd>
         </dl>
-        <h4 class="details-subtitle">Variables de entorno</h4>
-        ${envVarsHTML(job)}
+        ${USE_MOCKS ? `<h4 class="details-subtitle">Variables de entorno</h4>${envVarsHTML(job)}` : `
+        <progress id="job-progress" class="job-progress" max="100" value="0" aria-label="Progreso del trabajo"></progress>
+        <p id="job-message" class="job-help" aria-live="polite"></p>`}
         <h4 class="details-subtitle">Log</h4>
         <div class="job-log" id="job-log">${job.log.map((l) => `<div>${esc(l)}</div>`).join('')}</div>
         <div class="job-detail-actions">
           ${(job.status === 'queued' || job.status === 'running')
             ? `<button class="btn-text" id="job-detail-cancel">Cancelar trabajo</button>` : ''}
-          ${job.status === 'completed'
+          ${USE_MOCKS && job.status === 'completed'
             ? `<button class="btn-primary" id="job-detail-download">Descargar resultados al Home</button>` : ''}
         </div>
       </div>
     `;
 
     $('#job-detail-close', panel).addEventListener('click', closeDetail);
+    $('#job-folder', panel)?.addEventListener('click', () => navigate(rutaDe('/archivos', job.folder)));
+    updateProgress(panel, job);
+    if (!USE_MOCKS) await updateResults(panel, job, version);
+    if (version !== detailVersion || !root) return;
 
     const cancelBtn = $('#job-detail-cancel', panel);
     if (cancelBtn) {
@@ -245,7 +259,7 @@ async function openDetail(jobId) {
     const logEl = $('#job-log', panel);
     if (logEl) logEl.scrollTop = logEl.scrollHeight;
 
-    if (job.status === 'running' || job.status === 'queued') {
+    if (USE_MOCKS && (job.status === 'running' || job.status === 'queued')) {
       logUnsubscribe = subscribeJobLog({
         id: jobId,
         onLine: (line) => {
@@ -259,39 +273,72 @@ async function openDetail(jobId) {
       });
     }
   } catch (err) {
+    if (version !== detailVersion || !root) return;
     panel.innerHTML = `<div class="details-head"><h3>Trabajo</h3></div><p class="share-error details-error-pad">No se pudo cargar el trabajo.</p>`;
   }
 }
 
-async function refreshDetailFacts() {
-  if (!selectedJobId || !root) return;
-  const panel = $('#job-detail', root);
-  if (!panel || panel.classList.contains('hidden')) return;
-  try {
-    const job = await getJob({ id: selectedJobId });
-    const setText = (sel, text) => { const el = $(sel, panel); if (el) el.textContent = text; };
-    const heading = $('.details-head h3', panel);
-    if (heading) heading.textContent = job.name;
-    const badge = $('.job-status', panel);
-    if (badge) { badge.outerHTML = statusBadge(job.status); }
-    setText('#job-elapsed', durationText(job));
-    const nodesDd = $$('.details-facts dd', panel)[2];
-    if (nodesDd) nodesDd.textContent = job.assignedNodes.length ? job.assignedNodes.join(', ') : '—';
+function updateProgress(panel, job) {
+  const value = Math.max(0, Math.min(100, Number(job.progress) || 0));
+  const bar = $('#job-progress', panel);
+  if (bar) bar.value = value;
+  const message = $('#job-message', panel);
+  if (message) message.textContent = `${value}% · ${job.message || STATUS_LABELS[job.status]}`;
+}
 
-    const actions = $('.job-detail-actions', panel);
-    const stillActive = job.status === 'queued' || job.status === 'running';
-    if (actions && !stillActive && !$('#job-detail-download', panel) && job.status === 'completed') {
-      // El trabajo terminó mientras el panel estaba abierto: vuelve a pintar para mostrar "Descargar resultados".
-      openDetail(selectedJobId);
-    } else if (actions && $('#job-detail-cancel', panel) && !stillActive) {
-      $('#job-detail-cancel', panel).remove();
+async function updateResults(panel, job, version) {
+  if (!job.folder || !['completed', 'failed'].includes(job.status) || $('#job-results', panel)) return;
+  try {
+    const { folders } = await listItems({ parentId: job.folder });
+    if (version !== detailVersion || !root) return;
+    const name = `resultados-${String(job.id).slice(0, 8)}`;
+    const result = folders.find((folder) => folder.name === name);
+    if (!result) return;
+    const button = document.createElement('button');
+    button.id = 'job-results';
+    button.className = 'btn-primary';
+    button.textContent = 'Resultados';
+    button.addEventListener('click', () => navigate(rutaDe('/archivos', result.id)));
+    $('.job-detail-actions', panel).appendChild(button);
+  } catch { /* Reintentar en el siguiente sondeo: aún puede estar publicándose. */ }
+}
+
+async function refreshDetailFacts() {
+  if (!selectedJobId || !root || detailBusy) return;
+  const version = detailVersion;
+  const id = selectedJobId;
+  const panel = $('#job-detail', root);
+  detailBusy = true;
+  try {
+    const job = await getJob({ id });
+    if (version !== detailVersion || !root) return;
+    const badge = $('.job-status', panel);
+    if (badge) badge.outerHTML = statusBadge(job.status);
+    const elapsed = $('#job-elapsed', panel);
+    if (elapsed) elapsed.textContent = durationText(job);
+    updateProgress(panel, job);
+    const log = $('#job-log', panel);
+    if (log) {
+      const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 30;
+      log.textContent = job.log.join('\n');
+      if (atEnd) log.scrollTop = log.scrollHeight;
     }
-  } catch {
-    // silencioso: el próximo tick lo reintenta
-  }
+    const active = ['queued', 'running'].includes(job.status);
+    if (!active) {
+      $('#job-detail-cancel', panel)?.remove();
+      if (logUnsubscribe) { logUnsubscribe(); logUnsubscribe = null; }
+    }
+    if (USE_MOCKS) {
+      const nodes = $$('.details-facts dd', panel)[2];
+      if (nodes) nodes.textContent = job.assignedNodes.join(', ') || '—';
+      if (job.status === 'completed' && !$('#job-detail-download', panel)) openDetail(id);
+    } else await updateResults(panel, job, version);
+  } catch { /* El próximo sondeo reintenta. */ }
+  finally { detailBusy = false; }
 }
 
 function closeDetail() {
+  detailVersion += 1;
   selectedJobId = null;
   if (logUnsubscribe) { logUnsubscribe(); logUnsubscribe = null; }
   const panel = $('#job-detail', root);
@@ -375,6 +422,201 @@ function initSubmitModal() {
   return () => modal.removeEventListener('click', onBackdropClick);
 }
 
+function initRealSubmitModal() {
+  const modal = $('#modal-job-submit', root);
+  const form = $('#job-submit-form', modal);
+  form.innerHTML = `
+    <label class="share-field"><span>Nombre del trabajo</span><input id="job-name" class="share-select" required></label>
+    <label class="share-field"><span>Origen de los archivos</span>
+      <select id="job-origin" class="share-select"><option value="upload">Subir archivos</option><option value="folder">Usar una carpeta de Mi unidad</option></select>
+    </label>
+    <div id="job-upload-fields"><label class="share-field"><span>Código (.c, .cpp, Makefile) y datasets</span>
+      <input type="file" id="job-files" class="share-select" multiple></label>
+      <p class="job-help">Se guardarán en /HPC/&lt;nombre-en-slug&gt;. Si la carpeta existe, se reutiliza; sus otros archivos permanecen.</p>
+    </div>
+    <div id="job-folder-fields" class="hidden">
+      <p class="job-help">La carpeta abierta será la seleccionada. Solo se usan sus archivos directos.</p>
+      <div class="job-folder-nav"><button type="button" class="btn-text" id="job-folder-root">Mi unidad</button><button type="button" class="btn-text" id="job-folder-up">Subir un nivel</button></div>
+      <p id="job-folder-path" class="job-path"></p><div id="job-folder-list" class="job-folder-list"></div>
+    </div>
+    <label class="share-field"><span>Comando</span><input id="job-command" class="share-select" placeholder="./kmeans -k 10 -a USCensus1990.data.txt" required>
+      <span class="job-help">Si la carpeta tiene archivos .c, se compilan con el nombre del ejecutable del comando</span></label>
+    <label class="share-field"><span>Procesos</span><input id="job-processes" class="share-select" type="number" min="1" step="1" value="4" required>
+      <span id="job-slots" class="job-help">Slots disponibles en el clúster: consultando…</span></label>
+    <div id="job-upload-progress" class="hidden"><progress class="job-progress" max="100" value="0" aria-label="Progreso total de subida"></progress><p class="job-help" aria-live="polite"></p></div>
+    <p id="job-submit-error" class="share-error" role="alert"></p>
+    <div class="modal-foot"><button type="button" class="btn-text" id="job-submit-cancel">Cancelar</button><button type="submit" class="btn-primary">Enviar trabajo</button></div>`;
+  const field = (id) => $('#' + id, modal);
+  let controller = null;
+  let phase = '';
+  let alive = true;
+  let folder = null;
+  let browseVersion = 0;
+  let opening = 0;
+  const error = field('job-submit-error');
+  const origin = field('job-origin');
+  const files = field('job-files');
+  const command = field('job-command');
+  const cancel = field('job-submit-cancel');
+  const suggest = () => {
+    if (command.value.trim()) return;
+    const selected = Array.from(files.files);
+    const source = selected.find((f) => /\.c$/i.test(f.name));
+    const data = selected.find((f) => !/\.(c|cpp|cc|cxx|h|hpp)$/i.test(f.name) && !/^makefile$/i.test(f.name));
+    // Solo proponer tokens simples; nombres con espacios requieren un comando explícito.
+    if (source && /^[\w.-]+$/.test(source.name) && (!data || /^[\w.-]+$/.test(data.name))) {
+      command.value = `./${source.name.replace(/\.c$/i, '')}${data ? ' ' + data.name : ''}`;
+    }
+  };
+  files.addEventListener('change', suggest);
+  async function browse(path) {
+    const version = ++browseVersion;
+    folder = null;
+    field('job-folder-path').textContent = path;
+    const list = field('job-folder-list');
+    list.textContent = 'Cargando…';
+    try {
+      const items = await listItems({ parentId: path });
+      if (!alive || version !== browseVersion) return;
+      folder = path;
+      list.replaceChildren();
+      for (const item of items.folders) {
+        const button = document.createElement('button');
+        button.type = 'button'; button.className = 'btn-text job-folder-option';
+        button.textContent = `Carpeta: ${item.name}`;
+        button.addEventListener('click', () => browse(item.id));
+        list.appendChild(button);
+      }
+      const contents = document.createElement('p');
+      contents.className = 'job-help';
+      contents.textContent = items.files.length ? `Archivos: ${items.files.map((f) => f.name).join(', ')}` : 'Esta carpeta no contiene archivos directos.';
+      list.appendChild(contents);
+    } catch (err) {
+      if (alive && version === browseVersion) list.textContent = `No se pudo abrir la carpeta: ${err.message}`;
+    }
+  }
+  origin.addEventListener('change', () => {
+    field('job-upload-fields').classList.toggle('hidden', origin.value !== 'upload');
+    field('job-folder-fields').classList.toggle('hidden', origin.value !== 'folder');
+    if (origin.value === 'folder') browse('/');
+  });
+  field('job-folder-root').addEventListener('click', () => browse('/'));
+  field('job-folder-up').addEventListener('click', () => {
+    const current = field('job-folder-path').textContent;
+    browse(current.slice(0, current.lastIndexOf('/')) || '/');
+  });
+  function dismiss() {
+    if (phase === 'submit') return;
+    if (controller) { controller.abort(); return; }
+    opening += 1;
+    closeModal('modal-job-submit');
+  }
+  field('job-submit-close').addEventListener('click', dismiss);
+  cancel.addEventListener('click', dismiss);
+  modal.addEventListener('click', (event) => { if (event.target === modal) dismiss(); });
+  modal.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.stopPropagation(); event.preventDefault(); dismiss(); }
+  });
+  $('#btn-new-job', root).addEventListener('click', async () => {
+    const version = ++opening;
+    form.reset(); error.textContent = ''; folder = null;
+    field('job-upload-fields').classList.remove('hidden');
+    field('job-folder-fields').classList.add('hidden');
+    field('job-upload-progress').classList.add('hidden');
+    field('job-slots').textContent = 'Slots disponibles en el clúster: consultando…';
+    openModal('modal-job-submit');
+    try {
+      const nodes = await listNodes();
+      if (!alive || version !== opening) return;
+      const n = Number(nodes.slotsDisponibles);
+      field('job-slots').textContent = `Slots disponibles en el clúster: ${Number.isFinite(n) ? n : 'sin datos'}`;
+      if (!controller && field('job-processes').value === '4') field('job-processes').value = Number.isInteger(n) && n > 0 ? n : 4;
+    } catch {
+      if (alive && version === opening) field('job-slots').textContent = 'Slots disponibles en el clúster: sin datos';
+    }
+  });
+  async function ensureFolder(parent, name) {
+    const existing = (await listItems({ parentId: parent })).folders.find((f) => f.name === name);
+    if (existing) return existing.id;
+    try { return (await createFolder({ parentId: parent, name })).id; }
+    catch (err) {
+      // Otra sesión puede haber creado la carpeta entre el listado y el POST.
+      const found = (await listItems({ parentId: parent })).folders.find((f) => f.name === name);
+      if (found) return found.id;
+      throw err;
+    }
+  }
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (controller) return;
+    error.textContent = '';
+    const name = field('job-name').value.trim();
+    const selected = Array.from(files.files);
+    const uploading = origin.value === 'upload';
+    const processes = Number(field('job-processes').value);
+    suggest();
+    const cmd = command.value.trim();
+    if (!name || !cmd || !Number.isInteger(processes) || processes < 1 || (uploading ? !selected.length : !folder)) {
+      error.textContent = 'Indica nombre, comando, procesos válidos y archivos o una carpeta accesible.';
+      return;
+    }
+    controller = new AbortController();
+    const signal = controller.signal;
+    phase = 'upload';
+    const controls = $$('input, select, button', form).filter((el) => el !== cancel);
+    controls.forEach((el) => { el.disabled = true; });
+    const checkAbort = () => { if (signal.aborted) throw new Error('Subida cancelada. Los archivos ya guardados permanecen en Mi unidad.'); };
+    try {
+      let destination = folder;
+      if (uploading) {
+        const slug = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'trabajo';
+        const hpc = await ensureFolder('/', 'HPC');
+        checkAbort();
+        destination = await ensureFolder(hpc, slug);
+        checkAbort();
+        const progress = field('job-upload-progress');
+        progress.classList.remove('hidden');
+        const total = selected.reduce((sum, file) => sum + file.size, 0);
+        let completed = 0;
+        const start = performance.now();
+        for (const file of selected) {
+          checkAbort();
+          const update = ({ loaded }) => {
+            const bytes = completed + Math.min(loaded, file.size);
+            const percent = total ? bytes / total * 100 : 100;
+            const speed = bytes / 1024 ** 2 / Math.max((performance.now() - start) / 1000, 0.001);
+            $('progress', progress).value = percent;
+            $('p', progress).textContent = `${(bytes / 1024 ** 2).toFixed(1)} / ${(total / 1024 ** 2).toFixed(1)} MB · ${percent.toFixed(0)}% · ${speed.toFixed(1)} MB/s · ${file.name}${loaded >= file.size ? ' · Guardando…' : ''}`;
+          };
+          update({ loaded: 0 });
+          await uploadFile({ file, parentId: destination, signal, onProgress: update });
+          update({ loaded: file.size });
+          completed += file.size;
+        }
+      }
+      checkAbort();
+      phase = 'submit'; cancel.disabled = true;
+      error.textContent = 'Enviando trabajo al clúster…';
+      // Token recién emitido: el clúster lo usa hasta guardar los resultados.
+      await renovarSesion().catch((err) => console.warn('No se pudo renovar la sesión antes de enviar:', err.message));
+      await submitJob({ name, processes, command: cmd, folder: destination });
+      if (!alive) return;
+      showToast('Trabajo enviado', 'success');
+      closeModal('modal-job-submit');
+      statusFilter = 'all';
+      $$('#job-filters .filter-chip', root).forEach((chip) => chip.classList.toggle('active', chip.dataset.status === 'all'));
+      await refreshQueue();
+    } catch (err) {
+      if (alive) error.textContent = signal.aborted ? 'Subida cancelada. Los archivos ya guardados permanecen en Mi unidad.' : `No se pudo enviar el trabajo: ${err.message}`;
+    } finally {
+      controller = null; phase = '';
+      controls.forEach((el) => { el.disabled = false; });
+      cancel.disabled = false;
+    }
+  });
+  return () => { alive = false; opening += 1; browseVersion += 1; controller?.abort(); closeModal('modal-job-submit'); };
+}
+
 function initFilters() {
   $$('#job-filters .filter-chip', root).forEach((chip) => {
     chip.addEventListener('click', () => {
@@ -393,16 +635,18 @@ export async function mount(rootEl) {
   root.innerHTML = TEMPLATE;
 
   initFilters();
-  const unbindModal = initSubmitModal();
+  const unbindModal = USE_MOCKS ? initSubmitModal() : initRealSubmitModal();
   await refreshQueue();
 
-  refreshTimer = setInterval(() => { refreshQueue(); refreshDetailFacts(); }, 4000);
+  refreshTimer = setInterval(() => { refreshQueue(); refreshDetailFacts(); }, 3000);
 
   return function unmount() {
     clearInterval(refreshTimer);
     refreshTimer = null;
     if (logUnsubscribe) { logUnsubscribe(); logUnsubscribe = null; }
     if (unbindModal) unbindModal();
+    detailVersion += 1;
+    selectedJobId = null;
     root = null;
   };
 }

@@ -555,7 +555,15 @@ async function subirArchivos(archivos, { destino = viewState.currentFolderId || 
     const carpeta = archivo.destino || destino;
     showToast(`Subiendo ${archivo.name}…`);
     try {
-      await uploadFile({ file: archivo, parentId: carpeta });
+      const started = performance.now();
+      const large = archivo.size > 5 * 1024 ** 2;
+      const progress = ({ loaded, total }) => {
+        const percent = total ? Math.min(100, loaded / total * 100) : 0;
+        const speed = loaded / 1024 ** 2 / Math.max((performance.now() - started) / 1000, 0.001);
+        showToast(`Subiendo ${archivo.name}: ${percent.toFixed(0)}% · ${speed.toFixed(1)} MB/s${percent >= 100 ? ' · Guardando…' : ''}`, '', { persistent: true });
+      };
+      if (large) progress({ loaded: 0, total: archivo.size });
+      await uploadFile({ file: archivo, parentId: carpeta, onProgress: large ? progress : undefined });
       subidos += 1;
     } catch (err) {
       showToast(`${archivo.name}: ${err.message || 'no se pudo subir'}`, 'error');

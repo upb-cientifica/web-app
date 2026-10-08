@@ -30,6 +30,19 @@ function scheduleRefresh(expiresInSeconds) {
   }, ms);
 }
 
+/**
+ * Renueva el token de acceso ya, sin esperar al temporizador. Se usa antes de
+ * enviar un trabajo al clúster: el clúster guarda el token que recibe para
+ * traer el código y devolver los resultados al Home, y debe durarle los 15
+ * minutos completos, no los segundos que le queden al actual.
+ */
+export async function renovarSesion() {
+  const next = await apiRefreshToken();
+  token = next.token;
+  setAuthToken(token);
+  scheduleRefresh(next.expiresInSeconds);
+}
+
 export function isAuthenticated() {
   return !!token;
 }
