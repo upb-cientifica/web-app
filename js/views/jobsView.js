@@ -2,7 +2,7 @@ import { $, $$, esc } from '../utils/dom.js';
 import { formatDateTime, formatDuration } from '../utils/format.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal } from '../components/modal.js';
-import { listJobs, getJob, submitJob, cancelJob, subscribeJobLog, listNodes } from '../api/jobs.js';
+import { listJobs, getJob, submitJob, cancelJob, subscribeJobLog, getSlots } from '../api/jobs.js';
 import { USE_MOCKS } from '../config.js';
 import { navigate, rutaDe } from '../router.js';
 import { createFile, createFolder, uploadFile, listItems } from '../api/files.js';
@@ -526,7 +526,7 @@ function initRealSubmitModal() {
     field('job-slots').textContent = 'Slots disponibles en el clúster: consultando…';
     openModal('modal-job-submit');
     try {
-      const nodes = await listNodes();
+      const nodes = await getSlots();
       if (!alive || version !== opening) return;
       const n = Number(nodes.slotsDisponibles);
       field('job-slots').textContent = `Slots disponibles en el clúster: ${Number.isFinite(n) ? n : 'sin datos'}`;

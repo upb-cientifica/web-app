@@ -103,3 +103,6 @@
 .job-folder-list { max-height: 180px; overflow-y: auto; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
 .job-folder-option { display: block; width: 100%; text-align: left; overflow-wrap: anywhere; }
 .job-detail-actions { flex-wrap: wrap; }
+
+/* El campo es una columna flexible: sin esto, cada input crece hasta llenar el modal. */
+.job-submit-form .share-field > .share-select { flex: none; width: 100%; box-sizing: border-box; }

@@ -256,9 +256,13 @@ function subscribeJobLogReal({ id, onLine }) {
 /** Inventario de nodos del clúster, por RMI. */
 const listNodesReal = () => request(`${API_BASE.jobs}/nodos`);
 
+/** Slots libres del clúster ahora mismo: `{ slotsDisponibles }`. */
+const slotsReal = () => request(`${API_BASE.jobs}/slots`);
+
 export const listJobs = USE_MOCKS ? listJobsMock : listJobsReal;
 export const getJob = USE_MOCKS ? getJobMock : getJobReal;
 export const submitJob = USE_MOCKS ? submitJobMock : submitJobReal;
 export const cancelJob = USE_MOCKS ? cancelJobMock : cancelJobReal;
 export const subscribeJobLog = USE_MOCKS ? subscribeJobLogMock : subscribeJobLogReal;
 export const listNodes = USE_MOCKS ? (async () => []) : listNodesReal;
+export const getSlots = USE_MOCKS ? (async () => ({ slotsDisponibles: 16 })) : slotsReal;
