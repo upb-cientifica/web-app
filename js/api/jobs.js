@@ -198,9 +198,21 @@ function aJob(t, log = []) {
   };
 }
 
+// Equipos de cada trabajo, sacados de su log (no cambian una vez que arranca).
+const nodosPorTrabajo = new Map();
+
 async function listJobsReal({ status } = {}) {
   const ts = await request(`${API_BASE.jobs}/trabajos`);
   const jobs = (ts || []).map((t) => aJob(t));
+  await Promise.all(jobs.filter((j) => j.status !== 'queued' && !nodosPorTrabajo.has(j.id)).map(async (j) => {
+    const s = await request(`${API_BASE.jobs}/trabajos/${encodeURIComponent(j.id)}/salida`).catch(() => null);
+    const linea = (s?.salida || '').split('\n').find((l) => l.startsWith('Nodos: '));
+    if (linea) nodosPorTrabajo.set(j.id, linea.slice(7).split(',').map((h) => h.trim()).filter(Boolean));
+  }));
+  for (const j of jobs) {
+    const equipos = nodosPorTrabajo.get(j.id);
+    if (equipos) { j.assignedNodes = equipos; j.nodes = equipos.length; }
+  }
   return !status || status === 'all' ? jobs : jobs.filter((j) => j.status === status);
 }
 
@@ -209,7 +221,18 @@ const getJobReal = async ({ id }) => {
     request(`${API_BASE.jobs}/trabajos/${encodeURIComponent(id)}`),
     request(`${API_BASE.jobs}/trabajos/${encodeURIComponent(id)}/salida`).catch(() => ({ salida: '' })),
   ]);
-  return aJob(t, (s?.salida || '').split('\n').filter(Boolean));
+  const lineas = (s?.salida || '').split('\n').filter(Boolean);
+  const job = aJob(t, lineas.filter((l) => !l.startsWith('PROGRESO:')));
+  // El planificador anota «Nodos: a, b, c» antes de lanzar mpirun.
+  const nodos = lineas.find((l) => l.startsWith('Nodos: '));
+  if (nodos) {
+    job.assignedNodes = nodos.slice(7).split(',').map((h) => h.trim()).filter(Boolean);
+    job.nodes = job.assignedNodes.length;
+  }
+  // Programas iterativos (como k-means) imprimen «iter N»: la vista muestra la última.
+  const ultimaIter = [...lineas].reverse().find((l) => /^iter\s+\d+/.test(l));
+  if (ultimaIter) job.iteration = Number(ultimaIter.match(/^iter\s+(\d+)/)[1]);
+  return job;
 };
 
 /**

@@ -118,7 +118,7 @@ function queueTableHTML(jobsList) {
             <tr class="job-row ${j.id === selectedJobId ? 'selected' : ''}" data-id="${j.id}" tabindex="0" role="button" aria-label="Ver detalle de ${esc(j.name)}">
               <td>${esc(j.name)}</td>
               <td>${statusBadge(j.status)}</td>
-              <td>${j.nodes}</td>
+              <td>${j.nodes || '—'}</td>
               <td>${j.processes}</td>
               <td>${esc(formatDateTime(j.submittedAt))}</td>
               <td>${durationText(j)}</td>
@@ -198,7 +198,8 @@ async function openDetail(jobId) {
           <dt>Tiempo límite</dt><dd>${job.timeLimitMinutes} min</dd>
           <dt>Código fuente</dt><dd>${esc(job.sourceFileName)}</dd>
           <dt>Dataset</dt><dd>${esc(job.datasetFileName)}</dd>
-          ` : `<dt>Comando</dt><dd class="job-path">${esc(job.command || '—')}</dd>
+          ` : `<dt>Equipos</dt><dd class="job-path">${job.assignedNodes.length ? esc(job.assignedNodes.join(', ')) : '—'}</dd>
+          <dt>Comando</dt><dd class="job-path">${esc(job.command || '—')}</dd>
           <dt>Carpeta</dt><dd><button type="button" class="btn-text job-path" id="job-folder">${esc(job.folder || '—')}</button></dd>`}
           <dt>Enviado</dt><dd>${esc(formatDateTime(job.submittedAt))}</dd>
           <dt>Tiempo transcurrido</dt><dd id="job-elapsed">${durationText(job)}</dd>
@@ -283,7 +284,8 @@ function updateProgress(panel, job) {
   const bar = $('#job-progress', panel);
   if (bar) bar.value = value;
   const message = $('#job-message', panel);
-  if (message) message.textContent = `${value}% · ${job.message || STATUS_LABELS[job.status]}`;
+  const iteracion = job.iteration ? ` · iteración ${job.iteration}` : '';
+  if (message) message.textContent = `${value}% · ${job.message || STATUS_LABELS[job.status]}${iteracion}`;
 }
 
 async function updateResults(panel, job, version) {
