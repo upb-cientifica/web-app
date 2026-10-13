@@ -194,6 +194,8 @@ function aJob(t, log = []) {
     exitCode: t.codigoSalida,
     message: t.mensaje,
     durationSeconds: t.duracionSeg,
+    // Solo mpirun, sin traer el Home ni copiar a los nodos (lo que mide el speedup).
+    runSeconds: t.ejecucionSeg ?? null,
     owner: t.propietario,
   };
 }

@@ -97,7 +97,16 @@ function statusBadge(status) {
   return `<span class="job-status job-status-${status}">${STATUS_LABELS[status] || status}</span>`;
 }
 
+function totalText(job) {
+  if (job.startedAt && job.completedAt) return formatDuration(new Date(job.completedAt) - new Date(job.startedAt));
+  if (job.startedAt) return formatDuration(Date.now() - new Date(job.startedAt)) + ' (en curso)';
+  return '—';
+}
+
+// La duración de un trabajo terminado es la de MPI: las copias a los nodos
+// dependen de la red de la sala, no del cómputo, y falsearían la comparación.
 function durationText(job) {
+  if (job.completedAt && job.runSeconds != null) return formatDuration(job.runSeconds * 1000);
   if (job.startedAt && job.completedAt) return formatDuration(new Date(job.completedAt) - new Date(job.startedAt));
   if (job.startedAt) return formatDuration(Date.now() - new Date(job.startedAt)) + ' (en curso)';
   return '—';
@@ -202,7 +211,8 @@ async function openDetail(jobId) {
           <dt>Comando</dt><dd class="job-path">${esc(job.command || '—')}</dd>
           <dt>Carpeta</dt><dd><button type="button" class="btn-text job-path" id="job-folder">${esc(job.folder || '—')}</button></dd>`}
           <dt>Enviado</dt><dd>${esc(formatDateTime(job.submittedAt))}</dd>
-          <dt>Tiempo transcurrido</dt><dd id="job-elapsed">${durationText(job)}</dd>
+          <dt>Tiempo de ejecución (MPI)</dt><dd id="job-elapsed">${durationText(job)}</dd>
+          ${USE_MOCKS ? '' : `<dt>Tiempo total (con copias)</dt><dd id="job-total">${totalText(job)}</dd>`}
         </dl>
         ${USE_MOCKS ? `<h4 class="details-subtitle">Variables de entorno</h4>${envVarsHTML(job)}` : `
         <progress id="job-progress" class="job-progress" max="100" value="0" aria-label="Progreso del trabajo"></progress>
@@ -318,6 +328,8 @@ async function refreshDetailFacts() {
     if (badge) badge.outerHTML = statusBadge(job.status);
     const elapsed = $('#job-elapsed', panel);
     if (elapsed) elapsed.textContent = durationText(job);
+    const total = $('#job-total', panel);
+    if (total) total.textContent = totalText(job);
     updateProgress(panel, job);
     const log = $('#job-log', panel);
     if (log) {
