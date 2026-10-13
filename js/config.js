@@ -32,3 +32,7 @@ export const DOMINIO_CORREO = 'upb.edu.co';
 
 // Latencia simulada para que los estados de carga sean visibles en modo mock.
 export const MOCK_LATENCY_MS = 250;
+
+// Puede reemplazarse con <meta name="grafana-url" content="…"> al desplegar.
+export const grafanaUrl = document.querySelector('meta[name="grafana-url"]')?.content?.trim()
+  || 'http://10.154.12.227:3000';

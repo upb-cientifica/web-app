@@ -1,3 +1,5 @@
+import { grafanaUrl } from '../config.js';
+import { renovarSesion, getToken } from '../session.js';
 import { $, $$, esc } from '../utils/dom.js';
 import { showToast } from '../components/toast.js';
 import { drawLineChart } from '../components/lineChart.js';
@@ -16,6 +18,7 @@ let refreshTimer = null;
 const TEMPLATE = `
   <div class="main-header">
     <div class="main-title-wrap"><h1 class="main-title">Monitoreo del clúster</h1></div>
+    <button class="btn-primary" id="abrir-grafana">Abrir en Grafana</button>
   </div>
 
   <div class="monitor-cards" id="monitor-cards">
@@ -253,6 +256,28 @@ function initReportForm() {
 export async function mount(rootEl) {
   root = rootEl;
   root.innerHTML = TEMPLATE;
+
+  $('#abrir-grafana', root).addEventListener('click', async (event) => {
+    const boton = event.currentTarget;
+    // Reservar la pestaña dentro del gesto del usuario evita el bloqueo de popups.
+    const pestana = window.open('about:blank', '_blank');
+    if (!pestana) { showToast('Permite abrir pestañas para acceder a Grafana', 'error'); return; }
+    pestana.opener = null;
+    boton.disabled = true;
+    try {
+      await renovarSesion();
+      const token = getToken();
+      if (!token) throw new Error('La sesión no está disponible');
+      const url = new URL(`${grafanaUrl.replace(/\/+$/, '')}/d/upb-infra`);
+      url.searchParams.set('auth_token', token);
+      pestana.location.replace(url.href);
+    } catch (err) {
+      pestana.close();
+      showToast('No se pudo abrir Grafana: ' + err.message, 'error');
+    } finally {
+      boton.disabled = false;
+    }
+  });
 
   const today = new Date();
   const weekAgo = new Date(today.getTime() - 6 * 86400000);
