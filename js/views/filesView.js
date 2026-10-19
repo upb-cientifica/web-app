@@ -5,6 +5,7 @@
 
 import { $, $$, esc } from '../utils/dom.js';
 import { formatBytes } from '../utils/format.js';
+import { saveBlob } from '../utils/download.js';
 import { debounce } from '../utils/debounce.js';
 import { showToast } from '../components/toast.js';
 import { openModal, closeModal, initModalBackdropDismiss } from '../components/modal.js';
@@ -18,7 +19,7 @@ import { navigate, rutaDe } from '../router.js';
 import { USE_MOCKS } from '../config.js';
 import {
   listItems, getQuickAccess, getStorageUsage,
-  createFolder, renameItem, toggleStar, deleteItem, uploadFile,
+  createFolder, renameItem, toggleStar, deleteItem, restoreItem, downloadBlob, uploadFile,
 } from '../api/files.js';
 
 const SECTION_TITLES = {
@@ -77,6 +78,7 @@ const TEMPLATE = `
     </div>
     <div class="breadcrumb hidden" id="breadcrumb"></div>
     <div class="main-controls">
+      <button type="button" class="btn-text hidden" id="btn-empty-trash">Vaciar papelera</button>
       <div class="quick-filters" id="quick-filters">
         <button class="filter-chip active" data-type="all">Mis archivos</button>
         <button class="filter-chip" data-type="image">Fotos</button>
@@ -172,6 +174,21 @@ const itemRowHTML = (item, kind) => viewState.view === 'list' ? `
   </div>
 `;
 
+// El menú contextual es uno solo para todas las secciones. En la papelera solo
+// tiene sentido restaurar, bajar una copia o eliminar para siempre.
+function mostrarMenu(x, y) {
+  const enPapelera = viewState.section === 'trash';
+  const EN_PAPELERA = ['restore', 'download', 'delete'];
+  $$('#context-menu .ctx-item').forEach((b) => {
+    const act = b.dataset.act;
+    b.classList.toggle('hidden', enPapelera ? !EN_PAPELERA.includes(act) : act === 'restore');
+  });
+  $$('#context-menu hr').forEach((hr) => hr.classList.toggle('hidden', enPapelera));
+  const eliminar = $('#context-menu .ctx-item[data-act="delete"]');
+  if (eliminar && eliminar.lastChild) eliminar.lastChild.textContent = enPapelera ? 'Eliminar definitivamente' : 'Eliminar';
+  ctxMenu && ctxMenu.show(x, y);
+}
+
 function findItem(id) {
   return viewState.folders.find((x) => x.id === id) || viewState.files.find((x) => x.id === id);
 }
@@ -246,14 +263,14 @@ function bindItems(container) {
       el.classList.add('selected');
       // El menú se abre pegado al botón, hacia abajo y a la izquierda.
       const r = e.currentTarget.getBoundingClientRect();
-      ctxMenu && ctxMenu.show(r.right - 200, r.bottom + 4);
+      mostrarMenu(r.right - 200, r.bottom + 4);
     });
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       viewState.selectedId = el.dataset.id;
       $$('.item-row, .grid-card', mountedRoot).forEach((n) => n.classList.remove('selected'));
       el.classList.add('selected');
-      ctxMenu && ctxMenu.show(e.clientX, e.clientY);
+      mostrarMenu(e.clientX, e.clientY);
     });
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -371,6 +388,7 @@ function updateBreadcrumb() {
 
   if (backBtn) backBtn.classList.toggle('hidden', !inFolder);
   if (crumb) crumb.classList.toggle('hidden', !inFolder);
+  $('#btn-empty-trash', mountedRoot)?.classList.toggle('hidden', viewState.section !== 'trash');
 
   if (title) {
     title.textContent = inFolder
@@ -445,6 +463,26 @@ function initControls() {
 
   const backBtn = $('#btn-back', mountedRoot);
   if (backBtn) backBtn.addEventListener('click', goUpOneLevel);
+
+  const vaciar = $('#btn-empty-trash', mountedRoot);
+  if (vaciar) vaciar.addEventListener('click', vaciarPapelera);
+}
+
+async function vaciarPapelera() {
+  const todo = [...viewState.folders, ...viewState.files];
+  if (!todo.length) { showToast('La papelera ya está vacía'); return; }
+  const ok = await showConfirm(
+    `¿Eliminar para siempre los ${todo.length} elementos de la papelera? No se puede deshacer.`,
+    { confirmLabel: 'Vaciar papelera', danger: true });
+  if (!ok) return;
+  let fallos = 0;
+  for (const item of todo) {
+    try { await deleteItem({ id: item.id, definitivo: true }); } catch { fallos++; }
+  }
+  viewState.selectedId = null;
+  await loadAndRenderItems();
+  if (fallos) showToast(`No se pudieron eliminar ${fallos} elementos`, 'error');
+  else showToast('Papelera vaciada', 'success');
 }
 
 function initSearch() {
@@ -473,8 +511,29 @@ async function handleContextAction(act, item) {
         openPreview(item, TYPE_META[item.type] || TYPE_META.doc);
       }
       break;
-    case 'download':
-      showToast('Descargando: ' + item.name, 'success');
+    case 'download': {
+      // Una carpeta llega como ZIP: el servicio la arma al vuelo.
+      const nombre = isFolder ? `${item.name}.zip` : item.name;
+      showToast(`Descargando "${nombre}"…`);
+      try {
+        const blob = await downloadBlob(item);
+        if (!blob) { showToast('La descarga no está disponible en la demostración', 'error'); break; }
+        saveBlob(blob, nombre);
+        showToast(`Descargado: ${nombre}`, 'success');
+      } catch (err) {
+        showToast(err.message || `No se pudo descargar "${item.name}"`, 'error');
+      }
+      break;
+    }
+    case 'restore':
+      try {
+        await restoreItem({ id: item.id });
+        viewState.selectedId = null;
+        await loadAndRenderItems();
+        showToast(`"${item.name}" restaurado`, 'success');
+      } catch (err) {
+        showToast(err.message || 'No se pudo restaurar', 'error');
+      }
       break;
     case 'share':
       openShareModal(item);
@@ -500,12 +559,21 @@ async function handleContextAction(act, item) {
       showToast('Mover a... (demo)');
       break;
     case 'delete': {
-      const confirmed = await showConfirm(`¿Eliminar "${item.name}"?`, { confirmLabel: 'Eliminar', danger: true });
+      // En la papelera «eliminar» es de verdad: antes volvía a mandarlo a la papelera.
+      const definitivo = viewState.section === 'trash';
+      const confirmed = await showConfirm(definitivo
+        ? `¿Eliminar "${item.name}" para siempre? No se puede deshacer.`
+        : `¿Eliminar "${item.name}"?`,
+        { confirmLabel: definitivo ? 'Eliminar para siempre' : 'Eliminar', danger: true });
       if (confirmed) {
-        await deleteItem({ id: item.id });
-        viewState.selectedId = null;
-        await loadAndRenderItems();
-        showToast('Eliminado', 'success');
+        try {
+          await deleteItem({ id: item.id, definitivo });
+          viewState.selectedId = null;
+          await loadAndRenderItems();
+          showToast(definitivo ? 'Eliminado para siempre' : 'Movido a la papelera', 'success');
+        } catch (err) {
+          showToast(err.message || 'No se pudo eliminar', 'error');
+        }
       }
       break;
     }
