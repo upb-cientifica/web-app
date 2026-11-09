@@ -1,0 +1,35 @@
+name: CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: compilar y probar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias
+        run: npm install --no-audit --no-fund
+
+      - name: Compilar (TypeScript)
+        run: |
+          if [ -f tsconfig.json ]; then npx tsc --noEmit; \
+          else echo '::error::falta tsconfig.json (CT-802: el servidor web debe ser TypeScript)'; exit 1; fi
+
+      - name: Analisis estatico
+        run: find js -name '*.js' | xargs -r -n1 node --check
+
+      - name: Comprobar que no se sirven datos simulados
+        run: |
+          if grep -Eq 'USE_MOCKS[[:space:]]*=[[:space:]]*true' js/config.js; then
+            echo '::error::USE_MOCKS = true (CT-801: la SPA debe consumir el bus real)'; exit 1
+          fi
